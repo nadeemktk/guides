@@ -180,14 +180,14 @@ async function sendReminderEmail(config: any, trip: any, message: string, overdu
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
 
 // AUTH
-ipcMain.handle('auth:login', async (_, { username, password }) => {
+ipcMain.handle('auth:login', async (_e, { username, password }) => {
   const user = get<any>('SELECT * FROM users WHERE username = ? AND is_active = 1', [username])
   if (!user) return { success: false, error: 'User not found' }
   const valid = bcrypt.compareSync(password, user.password)
   if (!valid) return { success: false, error: 'Invalid password' }
   run(`INSERT INTO activity_log(id,user_id,username,action,entity_type) VALUES(?,?,?,?,?)`,
     [uuidv4(), user.id, user.username, 'LOGIN', 'auth'])
-  const { password: _, ...safeUser } = user
+  const { password: _pw, ...safeUser } = user
   return { success: true, user: { ...safeUser, permissions: JSON.parse(safeUser.permissions || '{}') } }
 })
 
