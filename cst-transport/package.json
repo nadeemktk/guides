@@ -8,7 +8,7 @@
     "dev": "concurrently \"vite\" \"electron-wait-vite\"",
     "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
     "build": "tsc -p tsconfig.node.json && vite build && electron-builder",
-    "build:win": "tsc -p tsconfig.node.json && vite build && electron-builder --win",
+    "build:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false tsc -p tsconfig.node.json && vite build && electron-builder --win",
     "preview": "vite preview",
     "seed": "ts-node scripts/seed.ts",
     "typecheck": "tsc --noEmit"
