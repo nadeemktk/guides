@@ -23,24 +23,24 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
 
   const [companies, setCompanies] = useState<Company[]>([])
   const [form, setForm] = useState({
-    company_id: invoice?.company_id || '',
-    client_id: invoice?.client_id || '',
-    client_name: invoice?.client_name || '',
-    client_address: invoice?.client_address || '',
-    client_trn: invoice?.client_trn || '',
+    company_id:    invoice?.company_id    || '',
+    client_id:     invoice?.client_id     || '',
+    client_name:   invoice?.client_name   || '',
+    client_address:invoice?.client_address|| '',
+    client_trn:    invoice?.client_trn    || '',
     customer_code: invoice?.customer_code || '',
-    invoice_date: invoice?.invoice_date || new Date().toISOString().split('T')[0],
-    due_date: invoice?.due_date || '',
-    service_period: invoice?.service_period || '',
-    po_number: invoice?.po_number || '',
+    invoice_date:  invoice?.invoice_date  || new Date().toISOString().split('T')[0],
+    due_date:      invoice?.due_date      || '',
+    service_period:invoice?.service_period|| '',
+    po_number:     invoice?.po_number     || '',
     delivery_note: invoice?.delivery_note || '',
-    sales_man: invoice?.sales_man || '',
-    lpo_number: invoice?.lpo_number || '',
-    discount: invoice?.discount || 0,
-    tax_rate: invoice?.tax_rate || taxRate,
-    notes: invoice?.notes || '',
-    terms: invoice?.terms || 'Payment due within 30 days.',
-    status: invoice?.status || 'draft'
+    sales_man:     invoice?.sales_man     || '',
+    lpo_number:    invoice?.lpo_number    || '',
+    discount:      invoice?.discount      || 0,
+    tax_rate:      invoice?.tax_rate      || taxRate,
+    notes:         invoice?.notes         || '',
+    terms:         invoice?.terms         || 'Payment due within 30 days.',
+    status:        invoice?.status        || 'draft'
   })
 
   const [items, setItems] = useState<Partial<InvoiceItem>[]>(
@@ -77,8 +77,10 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
   }
 
   const subtotal = items.reduce((s, i) => s + (i.line_total || 0), 0)
-  const tax_amount = subtotal * (form.tax_rate / 100)
-  const total = subtotal + tax_amount - (form.discount || 0)
+  const discountAmt = form.discount || 0
+  const taxableAmount = Math.max(0, subtotal - discountAmt)
+  const tax_amount = Math.round(taxableAmount * (form.tax_rate / 100) * 100) / 100
+  const total = taxableAmount + tax_amount
 
   const handleSave = async () => {
     if (saving) return
@@ -89,11 +91,14 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
     try {
       const payload = {
         ...form,
-        subtotal, tax_amount, total,
+        subtotal,
+        tax_amount,
+        total,
         amount_paid: invoice?.amount_paid || 0,
         balance_due: total - (invoice?.amount_paid || 0),
         items: validItems,
-        created_by: user?.id
+        created_by: user?.id,
+        updated_by: user?.id
       }
       if (invoice) {
         await window.api.updateInvoice({ id: invoice.id, ...payload })
@@ -193,8 +198,8 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
             <input className="input" type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} />
           </div>
           <div className="form-group">
-            <label className="label">Service Period / Delivery Note</label>
-            <input className="input" placeholder="e.g. Month: Jan 2026" value={form.delivery_note} onChange={e => setForm(p => ({ ...p, delivery_note: e.target.value }))} />
+            <label className="label">Service Period</label>
+            <input className="input" placeholder="e.g. January 2026" value={form.service_period} onChange={e => setForm(p => ({ ...p, service_period: e.target.value }))} />
           </div>
           <div className="form-group">
             <label className="label">PO Number</label>
@@ -203,6 +208,10 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
           <div className="form-group">
             <label className="label">LPO Number</label>
             <input className="input" placeholder="LPO #" value={form.lpo_number} onChange={e => setForm(p => ({ ...p, lpo_number: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="label">Delivery Note No</label>
+            <input className="input" placeholder="e.g. DN-2026-001" value={form.delivery_note} onChange={e => setForm(p => ({ ...p, delivery_note: e.target.value }))} />
           </div>
           <div className="form-group">
             <label className="label">Sales Man</label>
@@ -275,18 +284,40 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
             </div>
           </div>
           <div className="bg-slate-900 rounded-xl p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-slate-500">Total Before VAT:</span><span>{curr} {subtotal.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Discount:</span>
-              <input className="input w-24 text-right py-1 text-xs" type="number" value={form.discount} onChange={e => setForm(p => ({ ...p, discount: parseFloat(e.target.value) || 0 }))} />
+            <div className="flex justify-between">
+              <span className="text-slate-500">Subtotal:</span>
+              <span>{curr} {subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between"><span className="text-slate-500">After Discount:</span><span>{curr} {(subtotal - (form.discount||0)).toFixed(2)}</span></div>
-            <div className="flex items-center gap-2 justify-between">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-slate-500">Discount ({curr}):</span>
+              <input
+                className="input w-28 text-right py-1 text-xs"
+                type="number" min="0" step="0.01"
+                value={form.discount}
+                onChange={e => setForm(p => ({ ...p, discount: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
+            {discountAmt > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Taxable Amount:</span>
+                <span>{curr} {taxableAmount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2">
               <span className="text-slate-500">VAT Rate (%):</span>
-              <input className="input w-20 text-right py-1 text-xs" type="number" value={form.tax_rate} onChange={e => setForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))} />
+              <input
+                className="input w-20 text-right py-1 text-xs"
+                type="number" min="0" max="100" step="0.5"
+                value={form.tax_rate}
+                onChange={e => setForm(p => ({ ...p, tax_rate: parseFloat(e.target.value) || 0 }))}
+              />
             </div>
-            <div className="flex justify-between"><span className="text-slate-500">VAT Amount:</span><span>{curr} {tax_amount.toFixed(2)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">VAT ({form.tax_rate}%):</span>
+              <span>{curr} {tax_amount.toFixed(2)}</span>
+            </div>
             <div className="border-t border-slate-700 pt-2 flex justify-between font-black text-base">
-              <span className="text-slate-200">Net Amount Due:</span>
+              <span className="text-slate-200">Total:</span>
               <span className="text-blue-400">{curr} {total.toFixed(2)}</span>
             </div>
           </div>

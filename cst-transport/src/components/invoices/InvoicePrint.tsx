@@ -178,10 +178,11 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
                 {[
                   { en: 'Invoice Date', ar: 'تاريخ الفاتورة', val: invoice.invoice_date },
                   { en: 'Invoice No', ar: 'رقم الفاتورة', val: invoice.invoice_number },
-                  invoice.po_number ? { en: 'PO No', ar: 'عدد PO', val: invoice.po_number } : null,
+                  invoice.service_period ? { en: 'Service Period', ar: 'فترة الخدمة', val: invoice.service_period } : null,
+                  invoice.po_number ? { en: 'PO No', ar: 'رقم أمر الشراء', val: invoice.po_number } : null,
                   invoice.delivery_note ? { en: 'Delivery Note No', ar: 'رقم مذكرة التسليم', val: invoice.delivery_note } : null,
+                  invoice.lpo_number ? { en: 'LPO No', ar: 'رقم LPO', val: invoice.lpo_number } : null,
                   invoice.sales_man ? { en: 'Sales Man', ar: 'مندوب مبيعات', val: invoice.sales_man } : null,
-                  invoice.lpo_number ? { en: 'LPO No', ar: 'رقم أمر الشراء', val: invoice.lpo_number } : null,
                 ].filter(Boolean).map((row, i) => row && (
                   <div key={i} style={{ display: 'flex', gap: '6px', marginBottom: '3px', fontSize: '9px' }}>
                     <div style={{ minWidth: '100px', color: '#555' }}>
@@ -245,7 +246,7 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
 
             {/* Totals */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', border: '1.5px solid #222', borderTop: 'none', padding: '6px 10px' }}>
-              <table style={{ width: '280px', borderCollapse: 'collapse' }}>
+              <table style={{ width: '300px', borderCollapse: 'collapse' }}>
                 <tbody>
                   <tr>
                     <td style={{ padding: '3px 6px', fontSize: '9px', color: '#444' }}>
@@ -254,24 +255,22 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
                     </td>
                     <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 700, fontSize: '9px' }}>{curr} {(invoice.subtotal||0).toFixed(2)}</td>
                   </tr>
-                  {(invoice.discount || 0) > 0 && (
+                  {(invoice.discount || 0) > 0 && (<>
                     <tr>
-                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#444' }}>
+                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#c00' }}>
                         Discount
-                        <span style={{ display: 'block', fontSize: '8px', color: '#888', direction: 'rtl' }}>خصم</span>
+                        <span style={{ display: 'block', fontSize: '8px', color: '#c00', direction: 'rtl' }}>خصم</span>
                       </td>
                       <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 700, fontSize: '9px', color: '#c00' }}>– {curr} {(invoice.discount||0).toFixed(2)}</td>
                     </tr>
-                  )}
-                  {(invoice.discount || 0) > 0 && (
                     <tr>
                       <td style={{ padding: '3px 6px', fontSize: '9px', color: '#444' }}>
-                        Total After Discount
-                        <span style={{ display: 'block', fontSize: '8px', color: '#888', direction: 'rtl' }}>المجموع بعد الخصم</span>
+                        Taxable Amount
+                        <span style={{ display: 'block', fontSize: '8px', color: '#888', direction: 'rtl' }}>المبلغ الخاضع للضريبة</span>
                       </td>
                       <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 700, fontSize: '9px' }}>{curr} {((invoice.subtotal||0)-(invoice.discount||0)).toFixed(2)}</td>
                     </tr>
-                  )}
+                  </>)}
                   <tr>
                     <td style={{ padding: '3px 6px', fontSize: '9px', color: '#444' }}>
                       VAT ({taxRate}%)
@@ -286,15 +285,21 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
                     </td>
                     <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 900, fontSize: '11px', color: '#fff' }}>{curr} {(invoice.total||0).toFixed(2)}</td>
                   </tr>
-                  {invoice.amount_paid > 0 && (
+                  {(invoice.amount_paid || 0) > 0 && (
                     <tr>
-                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#16a34a' }}>Amount Paid</td>
+                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#16a34a' }}>
+                        Amount Paid
+                        <span style={{ display: 'block', fontSize: '8px', color: '#16a34a', direction: 'rtl' }}>المبلغ المدفوع</span>
+                      </td>
                       <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 700, fontSize: '9px', color: '#16a34a' }}>{curr} {(invoice.amount_paid||0).toFixed(2)}</td>
                     </tr>
                   )}
-                  {invoice.balance_due > 0 && (
+                  {(invoice.balance_due || 0) > 0 && (
                     <tr>
-                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#dc2626' }}>Balance Due / الرصيد المستحق</td>
+                      <td style={{ padding: '3px 6px', fontSize: '9px', color: '#dc2626' }}>
+                        Balance Due
+                        <span style={{ display: 'block', fontSize: '8px', color: '#dc2626', direction: 'rtl' }}>الرصيد المستحق</span>
+                      </td>
                       <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 900, fontSize: '9px', color: '#dc2626' }}>{curr} {(invoice.balance_due||0).toFixed(2)}</td>
                     </tr>
                   )}

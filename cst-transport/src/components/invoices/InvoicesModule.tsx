@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Edit2, Trash2, Eye, DollarSign, Search, Building2, Settings } from 'lucide-react'
+import { Plus, Edit2, Trash2, Eye, DollarSign, Search, Building2 } from 'lucide-react'
 import type { Invoice, Client, Company } from '../../types'
 import Modal from '../shared/Modal'
 import ConfirmDialog from '../shared/ConfirmDialog'
@@ -31,6 +31,8 @@ export default function InvoicesModule() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterClient, setFilterClient] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Invoice | null>(null)
   const [loadingEdit, setLoadingEdit] = useState(false)
@@ -38,6 +40,7 @@ export default function InvoicesModule() {
   const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null)
   const [paymentTarget, setPaymentTarget] = useState<Invoice | null>(null)
   const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
   const [stats, setStats] = useState<any>(null)
 
   // Company management state
@@ -56,7 +59,13 @@ export default function InvoicesModule() {
   const load = useCallback(async () => {
     setLoading(true)
     const [invs, cls, st] = await Promise.all([
-      window.api.listInvoices({ status: filterStatus || undefined, client_id: filterClient || undefined }),
+      window.api.listInvoices({
+        status:     filterStatus   || undefined,
+        client_id:  filterClient   || undefined,
+        company_id: filterCompany  || undefined,
+        start_date: filterDateFrom || undefined,
+        end_date:   filterDateTo   || undefined
+      }),
       window.api.listClients(),
       window.api.invoiceStats()
     ])
@@ -64,7 +73,7 @@ export default function InvoicesModule() {
     setClients(cls as Client[])
     setStats(st)
     setLoading(false)
-  }, [filterStatus, filterClient])
+  }, [filterStatus, filterClient, filterCompany, filterDateFrom, filterDateTo])
 
   useEffect(() => {
     load()
@@ -74,30 +83,54 @@ export default function InvoicesModule() {
   // Fetch full invoice (with items) before opening edit form
   const handleEdit = async (inv: Invoice) => {
     setLoadingEdit(true)
-    const full = await window.api.getInvoice(inv.id)
-    setEditing(full as Invoice)
-    setLoadingEdit(false)
-    setShowForm(true)
+    try {
+      const full = await window.api.getInvoice(inv.id)
+      setEditing(full as Invoice)
+      setShowForm(true)
+    } catch (err: any) {
+      alert(`Failed to load invoice: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setLoadingEdit(false)
+    }
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
-    await window.api.deleteInvoice(deleteTarget.id)
-    setDeleteTarget(null)
-    load()
+    try {
+      await window.api.deleteInvoice(deleteTarget.id)
+      setDeleteTarget(null)
+      load()
+    } catch (err: any) {
+      alert(`Failed to delete invoice: ${err?.message || 'Unknown error'}`)
+      setDeleteTarget(null)
+    }
   }
 
   const handleRecordPayment = async () => {
     if (!paymentTarget || !paymentAmount) return
-    await window.api.recordPayment({ id: paymentTarget.id, amount: parseFloat(paymentAmount), method: 'cash', created_by: user?.id })
-    setPaymentTarget(null)
-    setPaymentAmount('')
-    load()
+    const amt = parseFloat(paymentAmount)
+    if (isNaN(amt) || amt <= 0) { alert('Please enter a valid payment amount'); return }
+    if (amt > paymentTarget.balance_due + 0.01) {
+      if (!confirm(`Payment amount (${curr} ${amt.toFixed(2)}) exceeds balance due (${curr} ${paymentTarget.balance_due.toFixed(2)}). Continue?`)) return
+    }
+    try {
+      await window.api.recordPayment({ id: paymentTarget.id, amount: amt, method: paymentMethod, created_by: user?.id })
+      setPaymentTarget(null)
+      setPaymentAmount('')
+      setPaymentMethod('cash')
+      load()
+    } catch (err: any) {
+      alert(`Failed to record payment: ${err?.message || 'Unknown error'}`)
+    }
   }
 
   const handleView = async (inv: Invoice) => {
-    const full = await window.api.getInvoice(inv.id)
-    setViewInvoice(full as Invoice)
+    try {
+      const full = await window.api.getInvoice(inv.id)
+      setViewInvoice(full as Invoice)
+    } catch (err: any) {
+      alert(`Failed to load invoice: ${err?.message || 'Unknown error'}`)
+    }
   }
 
   // Company CRUD
@@ -134,13 +167,13 @@ export default function InvoicesModule() {
     />
   )
 
-  const filtered = invoices.filter(i => {
-    const matchSearch = !search ||
-      i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
-      i.client_name.toLowerCase().includes(search.toLowerCase())
-    const matchCompany = !filterCompany || (i as any).company_id === filterCompany
-    return matchSearch && matchCompany
-  })
+  const filtered = invoices.filter(i =>
+    !search ||
+    i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
+    i.client_name.toLowerCase().includes(search.toLowerCase()) ||
+    (i.po_number || '').toLowerCase().includes(search.toLowerCase()) ||
+    (i.lpo_number || '').toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
     <div>
@@ -198,27 +231,42 @@ export default function InvoicesModule() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-          <input className="input pl-9 text-sm" placeholder="Search invoices..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <select className="select text-sm w-40" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">All Status</option>
-          {['draft','sent','paid','partial','overdue','cancelled'].map(s => (
-            <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-          ))}
-        </select>
-        <select className="select text-sm w-48" value={filterClient} onChange={e => setFilterClient(e.target.value)}>
-          <option value="">All Clients</option>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-        </select>
-        {companies.length > 1 && (
-          <select className="select text-sm w-48" value={filterCompany} onChange={e => setFilterCompany(e.target.value)}>
-            <option value="">All Companies</option>
-            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      <div className="card p-3 mb-4">
+        <div className="flex flex-wrap gap-3">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+            <input className="input pl-9 text-sm" placeholder="Search by #, client, PO, LPO..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <select className="select text-sm w-36" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <option value="">All Status</option>
+            {['draft','sent','paid','partial','overdue','cancelled'].map(s => (
+              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+            ))}
           </select>
-        )}
+          <select className="select text-sm w-48" value={filterClient} onChange={e => setFilterClient(e.target.value)}>
+            <option value="">All Clients</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+          </select>
+          {companies.length > 1 && (
+            <select className="select text-sm w-48" value={filterCompany} onChange={e => setFilterCompany(e.target.value)}>
+              <option value="">All Companies</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <div className="flex items-center gap-2">
+            <input className="input text-sm w-36" type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} title="From date" />
+            <span className="text-slate-500 text-xs">–</span>
+            <input className="input text-sm w-36" type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} title="To date" />
+          </div>
+          {(filterStatus || filterClient || filterCompany || filterDateFrom || filterDateTo) && (
+            <button
+              className="btn-ghost text-xs text-slate-400"
+              onClick={() => { setFilterStatus(''); setFilterClient(''); setFilterCompany(''); setFilterDateFrom(''); setFilterDateTo('') }}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -271,8 +319,8 @@ export default function InvoicesModule() {
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleView(inv)} className="btn-icon" title="View"><Eye className="w-3.5 h-3.5" /></button>
                       <button onClick={() => handleEdit(inv)} className="btn-icon" title="Edit" disabled={loadingEdit}><Edit2 className="w-3.5 h-3.5" /></button>
-                      {inv.status !== 'paid' && (
-                        <button onClick={() => { setPaymentTarget(inv); setPaymentAmount(String(inv.balance_due)) }} className="btn-icon text-emerald-400" title="Record Payment">
+                      {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                        <button onClick={() => { setPaymentTarget(inv); setPaymentAmount(String((inv.balance_due||0).toFixed(2))); setPaymentMethod('cash') }} className="btn-icon text-emerald-400" title="Record Payment">
                           <DollarSign className="w-3.5 h-3.5" />
                         </button>
                       )}
@@ -309,11 +357,11 @@ export default function InvoicesModule() {
       {paymentTarget && (
         <Modal
           title={`Record Payment – ${paymentTarget.invoice_number}`}
-          onClose={() => setPaymentTarget(null)}
+          onClose={() => { setPaymentTarget(null); setPaymentAmount(''); setPaymentMethod('cash') }}
           size="sm"
           footer={
             <>
-              <button onClick={() => setPaymentTarget(null)} className="btn-secondary">Cancel</button>
+              <button onClick={() => { setPaymentTarget(null); setPaymentAmount(''); setPaymentMethod('cash') }} className="btn-secondary">Cancel</button>
               <button onClick={handleRecordPayment} className="btn-primary">
                 <DollarSign className="w-4 h-4" /> Record Payment
               </button>
@@ -321,15 +369,40 @@ export default function InvoicesModule() {
           }
         >
           <div className="space-y-3">
-            <div className="p-3 bg-slate-900 rounded-xl text-sm">
+            <div className="p-3 bg-slate-900 rounded-xl text-sm space-y-1">
               <div className="flex justify-between">
-                <span className="text-slate-500">Balance Due:</span>
-                <span className="font-semibold text-red-400">{curr} {paymentTarget.balance_due.toLocaleString()}</span>
+                <span className="text-slate-500">Invoice Total:</span>
+                <span className="font-medium">{curr} {(paymentTarget.total || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Already Paid:</span>
+                <span className="font-medium text-emerald-400">{curr} {(paymentTarget.amount_paid || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-700 pt-1 mt-1">
+                <span className="text-slate-400 font-medium">Balance Due:</span>
+                <span className="font-bold text-red-400">{curr} {(paymentTarget.balance_due || 0).toFixed(2)}</span>
               </div>
             </div>
             <div className="form-group">
               <label className="label">Payment Amount ({curr})</label>
-              <input className="input" type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+              <input
+                className="input text-lg font-semibold"
+                type="number" step="0.01" min="0"
+                value={paymentAmount}
+                onChange={e => setPaymentAmount(e.target.value)}
+                placeholder={String(paymentTarget.balance_due || 0)}
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Method</label>
+              <select className="select" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                <option value="cash">Cash</option>
+                <option value="bank">Bank Transfer</option>
+                <option value="online">Online</option>
+                <option value="cheque">Cheque</option>
+                <option value="other">Other</option>
+              </select>
             </div>
           </div>
         </Modal>

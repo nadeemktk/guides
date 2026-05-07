@@ -389,12 +389,17 @@ ipcMain.handle('trips:stats', async () => {
 
 // INVOICES
 ipcMain.handle('invoices:list', async (_, filters: any = {}) => {
+  // Auto-mark overdue: any sent/partial invoice past its due date
+  run(`UPDATE invoices SET status='overdue', updated_at=datetime('now')
+       WHERE status IN ('sent','partial') AND due_date IS NOT NULL AND due_date < date('now')`)
+
   let sql = 'SELECT * FROM invoices WHERE 1=1'
   const params: unknown[] = []
-  if (filters.client_id) { sql += ' AND client_id=?'; params.push(filters.client_id) }
-  if (filters.status)    { sql += ' AND status=?';    params.push(filters.status) }
-  if (filters.start_date){ sql += ' AND invoice_date>=?'; params.push(filters.start_date) }
-  if (filters.end_date)  { sql += ' AND invoice_date<=?'; params.push(filters.end_date) }
+  if (filters.client_id)  { sql += ' AND client_id=?';     params.push(filters.client_id) }
+  if (filters.company_id) { sql += ' AND company_id=?';    params.push(filters.company_id) }
+  if (filters.status)     { sql += ' AND status=?';        params.push(filters.status) }
+  if (filters.start_date) { sql += ' AND invoice_date>=?'; params.push(filters.start_date) }
+  if (filters.end_date)   { sql += ' AND invoice_date<=?'; params.push(filters.end_date) }
   sql += ' ORDER BY created_at DESC'
   return all(sql, params)
 })
@@ -405,74 +410,112 @@ ipcMain.handle('invoices:get', async (_, id) => {
   return inv
 })
 ipcMain.handle('invoices:create', async (_, data) => {
-  const id = uuidv4()
-  const setting = get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_counter'])
-  const counter = parseInt(setting?.value || '1000') + 1
-  const prefix = (get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_prefix']))?.value || 'INV'
-  const invNumber = `${prefix}-${counter}`
-  run('UPDATE app_settings SET value=? WHERE key=?', [String(counter), 'invoice_counter'])
+  return transaction(() => {
+    const id = uuidv4()
+    const setting = get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_counter'])
+    const counter = parseInt(setting?.value || '1000') + 1
+    const prefix = (get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_prefix']))?.value || 'INV'
+    const invNumber = `${prefix}-${counter}`
+    run('UPDATE app_settings SET value=? WHERE key=?', [String(counter), 'invoice_counter'])
 
-  run(`INSERT INTO invoices(id,invoice_number,company_id,client_id,client_name,client_address,client_trn,customer_code,
-       invoice_date,due_date,service_period,po_number,delivery_note,sales_man,lpo_number,
-       subtotal,tax_rate,tax_amount,discount,total,amount_paid,balance_due,status,notes,terms,created_by)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, invNumber, data.company_id||null, data.client_id||null, data.client_name,
-     data.client_address||'', data.client_trn||'', data.customer_code||'',
-     data.invoice_date, data.due_date||null, data.service_period||'',
-     data.po_number||'', data.delivery_note||'', data.sales_man||'', data.lpo_number||'',
-     data.subtotal||0, data.tax_rate||5, data.tax_amount||0, data.discount||0,
-     data.total||0, data.amount_paid||0, data.balance_due||0, data.status||'draft',
-     data.notes||'', data.terms||'Payment due within 30 days.', data.created_by||null])
+    run(`INSERT INTO invoices(id,invoice_number,company_id,client_id,client_name,client_address,client_trn,customer_code,
+         invoice_date,due_date,service_period,po_number,delivery_note,sales_man,lpo_number,
+         subtotal,tax_rate,tax_amount,discount,total,amount_paid,balance_due,status,notes,terms,created_by)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, invNumber, data.company_id||null, data.client_id||null, data.client_name,
+       data.client_address||'', data.client_trn||'', data.customer_code||'',
+       data.invoice_date, data.due_date||null, data.service_period||'',
+       data.po_number||'', data.delivery_note||'', data.sales_man||'', data.lpo_number||'',
+       data.subtotal||0, data.tax_rate||5, data.tax_amount||0, data.discount||0,
+       data.total||0, data.amount_paid||0, data.balance_due||0, data.status||'draft',
+       data.notes||'', data.terms||'Payment due within 30 days.', data.created_by||null])
 
-  if (data.items?.length) {
-    for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i]
-      run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
-           VALUES(?,?,?,?,?,?,?,?,?,?)`,
-        [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
-         item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+    if (data.items?.length) {
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i]
+        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
+             VALUES(?,?,?,?,?,?,?,?,?,?)`,
+          [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
+           item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+      }
     }
-  }
 
-  if (data.client_id) {
-    updateSOA(data.client_id, {
-      type: 'invoice', reference: invNumber, invoice_id: id,
-      description: `Invoice ${invNumber} – ${data.client_name}`,
-      vehicle_info: data.items?.[0]?.vehicle_type || '',
-      lpo_number: data.lpo_number || '',
-      debit: data.total || 0, credit: 0, status: 'unpaid', created_by: data.created_by
-    })
-  }
+    if (data.client_id) {
+      updateSOA(data.client_id, {
+        type: 'invoice', reference: invNumber, invoice_id: id,
+        description: `Invoice ${invNumber} – ${data.client_name}`,
+        vehicle_info: data.items?.[0]?.vehicle_type || '',
+        lpo_number: data.lpo_number || '',
+        debit: data.total || 0, credit: 0, status: 'unpaid', created_by: data.created_by
+      })
+    }
 
-  logActivity(data.created_by, 'CREATE', 'invoice', id, invNumber)
-  return { success: true, id, invoice_number: invNumber }
+    logActivity(data.created_by, 'CREATE', 'invoice', id, invNumber)
+    return { success: true, id, invoice_number: invNumber }
+  })
 })
 ipcMain.handle('invoices:update', async (_, { id, ...data }) => {
-  run(`UPDATE invoices SET company_id=?,client_id=?,client_name=?,client_address=?,client_trn=?,customer_code=?,
-       invoice_date=?,due_date=?,service_period=?,po_number=?,delivery_note=?,sales_man=?,lpo_number=?,
-       subtotal=?,tax_rate=?,tax_amount=?,discount=?,total=?,amount_paid=?,balance_due=?,
-       status=?,notes=?,terms=?,updated_at=datetime('now') WHERE id=?`,
-    [data.company_id||null, data.client_id||null, data.client_name, data.client_address||'', data.client_trn||'', data.customer_code||'',
-     data.invoice_date, data.due_date||null, data.service_period||'',
-     data.po_number||'', data.delivery_note||'', data.sales_man||'', data.lpo_number||'',
-     data.subtotal||0, data.tax_rate||5, data.tax_amount||0, data.discount||0,
-     data.total||0, data.amount_paid||0, data.balance_due||0,
-     data.status||'draft', data.notes||'', data.terms||'', id])
-  if (data.items) {
-    run('DELETE FROM invoice_items WHERE invoice_id=?', [id])
-    for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i]
-      run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
-           VALUES(?,?,?,?,?,?,?,?,?,?)`,
-        [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
-         item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+  return transaction(() => {
+    const existing = get<any>('SELECT * FROM invoices WHERE id=?', [id])
+    if (!existing) return { success: false, error: 'Invoice not found' }
+
+    run(`UPDATE invoices SET company_id=?,client_id=?,client_name=?,client_address=?,client_trn=?,customer_code=?,
+         invoice_date=?,due_date=?,service_period=?,po_number=?,delivery_note=?,sales_man=?,lpo_number=?,
+         subtotal=?,tax_rate=?,tax_amount=?,discount=?,total=?,amount_paid=?,balance_due=?,
+         status=?,notes=?,terms=?,updated_at=datetime('now') WHERE id=?`,
+      [data.company_id||null, data.client_id||null, data.client_name,
+       data.client_address||'', data.client_trn||'', data.customer_code||'',
+       data.invoice_date, data.due_date||null, data.service_period||'',
+       data.po_number||'', data.delivery_note||'', data.sales_man||'', data.lpo_number||'',
+       data.subtotal||0, data.tax_rate||5, data.tax_amount||0, data.discount||0,
+       data.total||0, data.amount_paid||0, data.balance_due||0,
+       data.status||'draft', data.notes||'', data.terms||'', id])
+
+    if (data.items !== undefined) {
+      run('DELETE FROM invoice_items WHERE invoice_id=?', [id])
+      for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i]
+        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
+             VALUES(?,?,?,?,?,?,?,?,?,?)`,
+          [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
+           item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+      }
     }
-  }
-  return { success: true }
+
+    // Sync SOA if invoice total changed
+    const newTotal = data.total || 0
+    const oldTotal = existing.total || 0
+    const clientId = data.client_id || existing.client_id
+    if (clientId && Math.abs(newTotal - oldTotal) > 0.001) {
+      // Update the debit on the SOA invoice row for this invoice
+      run(`UPDATE soa_transactions SET debit=?, lpo_number=?, updated_at=datetime('now')
+           WHERE invoice_id=? AND type='invoice'`, [newTotal, data.lpo_number||'', id])
+      // Recalculate all running balances for this client
+      recalculateSOABalances(clientId)
+    }
+
+    logActivity(data.updated_by || null, 'UPDATE', 'invoice', id, existing.invoice_number)
+    return { success: true }
+  })
 })
 ipcMain.handle('invoices:delete', async (_, id) => {
-  run('DELETE FROM invoices WHERE id=?', [id])
-  return { success: true }
+  return transaction(() => {
+    const existing = get<any>('SELECT * FROM invoices WHERE id=?', [id])
+    if (!existing) return { success: false, error: 'Invoice not found' }
+
+    // Unlink trips that reference this invoice
+    run('UPDATE trips SET invoice_id=NULL WHERE invoice_id=?', [id])
+    // Remove SOA transactions for this invoice
+    run('DELETE FROM soa_transactions WHERE invoice_id=?', [id])
+    // Delete invoice (CASCADE deletes invoice_items via FK)
+    run('DELETE FROM invoices WHERE id=?', [id])
+
+    // Recalculate SOA running balances for the client
+    if (existing.client_id) recalculateSOABalances(existing.client_id)
+
+    logActivity(null, 'DELETE', 'invoice', id, existing.invoice_number)
+    return { success: true }
+  })
 })
 ipcMain.handle('invoices:record_payment', async (_, { id, amount, method, created_by }) => {
   const inv = get<any>('SELECT * FROM invoices WHERE id=?', [id])
@@ -843,6 +886,18 @@ ipcMain.handle('backup:create', async () => {
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function recalculateSOABalances(clientId: string) {
+  const txns = all<any>(
+    'SELECT id, debit, credit FROM soa_transactions WHERE client_id=? ORDER BY transaction_date ASC, created_at ASC',
+    [clientId]
+  )
+  let balance = 0
+  for (const tx of txns) {
+    balance = balance + (tx.debit || 0) - (tx.credit || 0)
+    run('UPDATE soa_transactions SET balance=? WHERE id=?', [Math.round(balance * 100) / 100, tx.id])
+  }
+}
 
 function updateSOA(clientId: string, data: any) {
   const lastBalance = (get<any>('SELECT balance FROM soa_transactions WHERE client_id=? ORDER BY created_at DESC, id DESC LIMIT 1', [clientId]))?.balance || 0

@@ -385,6 +385,13 @@ const MIGRATIONS = [
   `ALTER TABLE driver_salaries ADD COLUMN employee_type TEXT NOT NULL DEFAULT 'driver'`,
   `ALTER TABLE clients ADD COLUMN client_type TEXT NOT NULL DEFAULT 'monthly'`,
   `ALTER TABLE companies ADD COLUMN po_box TEXT`,
+  // invoice_items columns added in later versions of the schema
+  `ALTER TABLE invoice_items ADD COLUMN vehicle_type TEXT`,
+  `ALTER TABLE invoice_items ADD COLUMN duration TEXT`,
+  `ALTER TABLE invoice_items ADD COLUMN sort_order INTEGER DEFAULT 0`,
+  `ALTER TABLE invoice_items ADD COLUMN trip_id TEXT`,
+  // service_period on invoices
+  `ALTER TABLE invoices ADD COLUMN service_period TEXT`,
 ]
 
 export function getDatabase(): Database.Database {
