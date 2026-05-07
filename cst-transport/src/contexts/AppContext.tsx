@@ -16,18 +16,23 @@ interface AppContextType {
 }
 
 const defaultSettings: AppSettings = {
-  company_name: 'City Star Transport Passengers LLC',
+  company_name:    'City Star Transport Passengers LLC',
   company_address: 'Dubai, United Arab Emirates',
-  company_phone: '',
-  company_email: 'citystar815@gmail.com',
-  company_trn: '',
-  currency: 'AED',
-  tax_rate: '5',
-  invoice_prefix: 'INV',
+  company_phone:   '',
+  company_email:   'citystar815@gmail.com',
+  company_trn:     '',
+  currency:        'AED',
+  tax_rate:        '5',
+  invoice_prefix:  'INV',
   invoice_counter: '1000',
-  theme: 'dark',
-  anthropic_key: '',
-  logo_path: ''
+  theme:           'dark',
+  anthropic_key:   '',
+  logo_path:       '',
+  bank_name:       '',
+  bank_account:    '',
+  bank_iban:       '',
+  bank_swift:      '',
+  bank_beneficiary:''
 }
 
 const AppContext = createContext<AppContextType | null>(null)

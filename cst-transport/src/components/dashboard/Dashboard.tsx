@@ -53,14 +53,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
   const { settings } = useApp()
   const { user } = useAuth()
 
   useEffect(() => {
-    window.api.getDashboard().then(d => {
-      setData(d as DashboardData)
-      setLoading(false)
-    })
+    window.api.getDashboard()
+      .then(d => { setData(d as DashboardData); setLoading(false) })
+      .catch(e => { setError(e?.message || 'Failed to load dashboard'); setLoading(false) })
   }, [])
 
   if (loading) {
@@ -71,7 +71,19 @@ export default function Dashboard() {
     )
   }
 
-  const d = data!
+  if (error || !data) {
+    return (
+      <div className="flex items-center justify-center h-64 flex-col gap-3">
+        <AlertTriangle className="w-8 h-8 text-amber-400" />
+        <p className="text-slate-400 text-sm">{error || 'No data available'}</p>
+        <button className="btn-secondary text-xs" onClick={() => { setLoading(true); setError(null); window.api.getDashboard().then(d => { setData(d as DashboardData); setLoading(false) }).catch(e => { setError(e?.message || 'Failed'); setLoading(false) }) }}>
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  const d = data
   const curr = settings.currency || 'AED'
 
   // Merge revenue + expense charts

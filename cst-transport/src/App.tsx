@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { AppProvider } from './contexts/AppContext'
 import LoginPage from './components/auth/LoginPage'
 import MainLayout from './components/layout/MainLayout'
+import ErrorBoundary from './components/shared/ErrorBoundary'
 
 function AppContent() {
   const { user, isLoading } = useAuth()
@@ -31,8 +32,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary fallbackLabel="The application encountered a critical error. Please reload.">
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

@@ -58,23 +58,44 @@
   "build": {
     "appId": "com.citystar.transport",
     "productName": "CST Transport Manager",
+    "copyright": "Copyright © 2025 City Star Transport Passengers LLC",
     "asar": true,
-    "asarUnpack": ["**/node_modules/better-sqlite3/**"],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/bcryptjs/**"
+    ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "!**/*.map",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,changelog.md}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "CST Transport Manager",
+      "deleteAppDataOnUninstall": false,
+      "menuCategory": "City Star Transport"
+    },
+    "portable": {
+      "artifactName": "CST-Transport-Manager-Portable-${version}.exe"
     }
   }
 }
