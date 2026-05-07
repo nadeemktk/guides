@@ -42,6 +42,9 @@ export default function TripForm({ trip, vehicles, drivers, clients, onClose, on
   })
   const [saving, setSaving] = useState(false)
 
+  // Only show Daily Trip clients in the trip client selector
+  const dailyTripClients = clients.filter(c => c.client_type === 'daily_trip')
+
   useEffect(() => {
     if (form.client_id) {
       const c = clients.find(x => x.id === form.client_id)
@@ -126,11 +129,14 @@ export default function TripForm({ trip, vehicles, drivers, clients, onClose, on
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Client Details</div>
           <div className="grid grid-cols-3 gap-4">
             <div className="form-group">
-              <label className="label">Client (from database)</label>
+              <label className="label">Daily Trip Client</label>
               <select className="select" value={form.client_id} onChange={e => set('client_id', e.target.value)}>
                 <option value="">-- Walk-in / Manual --</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+                {dailyTripClients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select>
+              {dailyTripClients.length === 0 && (
+                <p className="text-[10px] text-amber-400 mt-1">No daily trip clients yet. Add them in the Clients module.</p>
+              )}
             </div>
             {F('client_name', 'Client Name *', 'text', { placeholder: 'Company or individual name' })}
             {F('client_mobile', 'Client Mobile', 'text', { placeholder: '+971...' })}

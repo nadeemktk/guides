@@ -10,6 +10,7 @@ import {
 import type { DashboardData } from '../../types'
 import { useApp } from '../../contexts/AppContext'
 import { useAuth } from '../../contexts/AuthContext'
+import CityStarLogo from '../../assets/CityStarLogo'
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4']
 
@@ -86,16 +87,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-slate-100">
-            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.full_name?.split(' ')[0]} 👋
-          </h1>
-          <p className="text-slate-500 text-sm mt-0.5">{settings.company_name}</p>
+      {/* Welcome / Logo Header */}
+      <div className="card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        {/* Logo */}
+        <div className="flex items-center gap-4">
+          <CityStarLogo width={220} height={74} className="flex-shrink-0" />
+          <div className="hidden sm:block w-px h-12 bg-slate-700" />
+          <div className="hidden sm:block">
+            <h1 className="text-xl font-black text-slate-100">
+              Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.full_name?.split(' ')[0]}
+            </h1>
+            <p className="text-slate-500 text-xs mt-0.5">Transport Management System</p>
+          </div>
         </div>
-        <div className="text-right text-slate-500 text-sm">
-          <div>{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+        {/* Date & greeting (mobile shows here too) */}
+        <div className="flex flex-col items-start sm:items-end gap-1 text-sm flex-shrink-0">
+          <div className="text-slate-300 font-medium">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </div>
+          <div className="text-slate-500 text-xs">{settings.company_name}</div>
+          <div className="sm:hidden text-slate-400 text-sm font-medium mt-1">
+            Welcome, {user?.full_name?.split(' ')[0]}
+          </div>
         </div>
       </div>
 

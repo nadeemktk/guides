@@ -383,6 +383,7 @@ const MIGRATIONS = [
   `ALTER TABLE soa_transactions ADD COLUMN remarks TEXT`,
   `ALTER TABLE driver_salaries ADD COLUMN staff_id TEXT`,
   `ALTER TABLE driver_salaries ADD COLUMN employee_type TEXT NOT NULL DEFAULT 'driver'`,
+  `ALTER TABLE clients ADD COLUMN client_type TEXT NOT NULL DEFAULT 'monthly'`,
 ]
 
 export function getDatabase(): Database.Database {

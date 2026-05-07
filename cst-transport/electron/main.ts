@@ -250,18 +250,24 @@ ipcMain.handle('companies:delete', async (_, id) => {
 })
 
 // CLIENTS
-ipcMain.handle('clients:list', async () => all('SELECT * FROM clients ORDER BY company_name'))
+ipcMain.handle('clients:list', async (_, filters: any = {}) => {
+  let sql = 'SELECT * FROM clients WHERE 1=1'
+  const params: unknown[] = []
+  if (filters.client_type) { sql += ' AND client_type=?'; params.push(filters.client_type) }
+  sql += ' ORDER BY company_name'
+  return all(sql, params)
+})
 ipcMain.handle('clients:get', async (_, id) => get('SELECT * FROM clients WHERE id=?', [id]))
 ipcMain.handle('clients:create', async (_, data) => {
   const id = uuidv4()
-  run(`INSERT INTO clients(id,customer_code,company_name,contact_name,mobile,email,address,tax_number,credit_limit,notes)
-       VALUES(?,?,?,?,?,?,?,?,?,?)`,
-    [id, data.customer_code||'', data.company_name, data.contact_name||'', data.mobile||'', data.email||'', data.address||'', data.tax_number||'', data.credit_limit||0, data.notes||''])
+  run(`INSERT INTO clients(id,customer_code,company_name,contact_name,mobile,email,address,tax_number,credit_limit,notes,client_type)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, data.customer_code||'', data.company_name, data.contact_name||'', data.mobile||'', data.email||'', data.address||'', data.tax_number||'', data.credit_limit||0, data.notes||'', data.client_type||'monthly'])
   return { success: true, id }
 })
 ipcMain.handle('clients:update', async (_, { id, ...data }) => {
-  run(`UPDATE clients SET customer_code=?,company_name=?,contact_name=?,mobile=?,email=?,address=?,tax_number=?,credit_limit=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [data.customer_code||'', data.company_name, data.contact_name||'', data.mobile||'', data.email||'', data.address||'', data.tax_number||'', data.credit_limit||0, data.notes||'', id])
+  run(`UPDATE clients SET customer_code=?,company_name=?,contact_name=?,mobile=?,email=?,address=?,tax_number=?,credit_limit=?,notes=?,client_type=?,updated_at=datetime('now') WHERE id=?`,
+    [data.customer_code||'', data.company_name, data.contact_name||'', data.mobile||'', data.email||'', data.address||'', data.tax_number||'', data.credit_limit||0, data.notes||'', data.client_type||'monthly', id])
   return { success: true }
 })
 ipcMain.handle('clients:delete', async (_, id) => {

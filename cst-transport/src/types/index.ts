@@ -55,6 +55,7 @@ export interface Client {
   credit_limit: number
   notes: string
   is_active: boolean
+  client_type: 'monthly' | 'daily_trip'
   created_at: string
 }
 
