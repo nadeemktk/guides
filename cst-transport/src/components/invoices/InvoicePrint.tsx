@@ -29,6 +29,7 @@ const PRINT_CSS = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: white; }
   .page { width: 210mm; min-height: 297mm; padding: 12mm 14mm; margin: 0 auto; }
+  .letterhead-space { height: 35mm; }
   .header-title { text-align: center; margin-bottom: 6px; }
   .header-title h1 { font-size: 20px; font-weight: 900; letter-spacing: 4px; color: #000; }
   .header-title .ar { font-size: 14px; color: #444; font-family: Arial; direction: rtl; }
@@ -76,6 +77,7 @@ const PRINT_CSS = `
   @media print {
     body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     .page { padding: 8mm 10mm; }
+    .letterhead-space { height: 35mm; }
   }
 `
 
@@ -130,6 +132,9 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
             ref={printRef}
             style={{ width: '210mm', minHeight: '297mm', background: 'white', margin: '0 auto', padding: '12mm 14mm', fontFamily: 'Arial, sans-serif', fontSize: '10px', color: '#1a1a1a' }}
           >
+            {/* Letterhead space – filled by company letterhead when printing on pre-printed paper */}
+            <div className="letterhead-space" style={{ height: '35mm' }} />
+
             {/* Title */}
             <div style={{ textAlign: 'center', marginBottom: '6px' }}>
               <div style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '4px', color: '#000' }}>TAX INVOICE</div>

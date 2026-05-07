@@ -384,6 +384,7 @@ const MIGRATIONS = [
   `ALTER TABLE driver_salaries ADD COLUMN staff_id TEXT`,
   `ALTER TABLE driver_salaries ADD COLUMN employee_type TEXT NOT NULL DEFAULT 'driver'`,
   `ALTER TABLE clients ADD COLUMN client_type TEXT NOT NULL DEFAULT 'monthly'`,
+  `ALTER TABLE companies ADD COLUMN po_box TEXT`,
 ]
 
 export function getDatabase(): Database.Database {

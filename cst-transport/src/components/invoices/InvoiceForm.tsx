@@ -81,23 +81,31 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
   const total = subtotal + tax_amount - (form.discount || 0)
 
   const handleSave = async () => {
-    if (!form.client_name) { alert('Client name is required'); return }
+    if (saving) return
+    if (!form.client_name.trim()) { alert('Client name is required'); return }
+    const validItems = items.filter(i => i.description?.trim())
+    if (validItems.length === 0) { alert('Please add at least one line item with a description'); return }
     setSaving(true)
-    const payload = {
-      ...form,
-      subtotal, tax_amount, total,
-      amount_paid: invoice?.amount_paid || 0,
-      balance_due: total - (invoice?.amount_paid || 0),
-      items: items.filter(i => i.description),
-      created_by: user?.id
+    try {
+      const payload = {
+        ...form,
+        subtotal, tax_amount, total,
+        amount_paid: invoice?.amount_paid || 0,
+        balance_due: total - (invoice?.amount_paid || 0),
+        items: validItems,
+        created_by: user?.id
+      }
+      if (invoice) {
+        await window.api.updateInvoice({ id: invoice.id, ...payload })
+      } else {
+        await window.api.createInvoice(payload)
+      }
+      onSaved()
+    } catch (err: any) {
+      alert(`Failed to save invoice: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setSaving(false)
     }
-    if (invoice) {
-      await window.api.updateInvoice({ id: invoice.id, ...payload })
-    } else {
-      await window.api.createInvoice(payload)
-    }
-    setSaving(false)
-    onSaved()
   }
 
   const curr = settings.currency || 'AED'

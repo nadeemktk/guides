@@ -231,16 +231,16 @@ ipcMain.handle('companies:get', async (_, id) => get('SELECT * FROM companies WH
 ipcMain.handle('companies:create', async (_, data) => {
   const id = uuidv4()
   if (data.is_default) run(`UPDATE companies SET is_default=0`)
-  run(`INSERT INTO companies(id,name,trn,address,phone,email,bank_name,bank_account,bank_iban,bank_swift,logo_path,is_default)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, data.name, data.trn||'', data.address||'', data.phone||'', data.email||'',
+  run(`INSERT INTO companies(id,name,trn,po_box,address,phone,email,bank_name,bank_account,bank_iban,bank_swift,logo_path,is_default)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
      data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'', data.is_default?1:0])
   return { success: true, id }
 })
 ipcMain.handle('companies:update', async (_, { id, ...data }) => {
   if (data.is_default) run(`UPDATE companies SET is_default=0`)
-  run(`UPDATE companies SET name=?,trn=?,address=?,phone=?,email=?,bank_name=?,bank_account=?,bank_iban=?,bank_swift=?,logo_path=?,is_default=?,updated_at=datetime('now') WHERE id=?`,
-    [data.name, data.trn||'', data.address||'', data.phone||'', data.email||'',
+  run(`UPDATE companies SET name=?,trn=?,po_box=?,address=?,phone=?,email=?,bank_name=?,bank_account=?,bank_iban=?,bank_swift=?,logo_path=?,is_default=?,updated_at=datetime('now') WHERE id=?`,
+    [data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
      data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'', data.is_default?1:0, id])
   return { success: true }
 })
@@ -511,20 +511,6 @@ ipcMain.handle('soa:list', async (_, filters: any = {}) => {
   if (filters.end_date)   { sql += ' AND s.transaction_date<=?'; params.push(filters.end_date) }
   sql += ' ORDER BY s.transaction_date ASC, s.created_at ASC'
   return all(sql, params)
-})
-ipcMain.handle('soa:add_transaction', async (_, data) => {
-  updateSOA(data.client_id, data)
-  return { success: true }
-})
-ipcMain.handle('soa:update_transaction', async (_, { id, ...data }) => {
-  run(`UPDATE soa_transactions SET transaction_date=?,description=?,reference=?,vehicle_info=?,lpo_number=?,debit=?,credit=?,status=?,remarks=? WHERE id=?`,
-    [data.transaction_date, data.description, data.reference||'', data.vehicle_info||'', data.lpo_number||'',
-     data.debit||0, data.credit||0, data.status||'unpaid', data.remarks||'', id])
-  return { success: true }
-})
-ipcMain.handle('soa:delete_transaction', async (_, id) => {
-  run('DELETE FROM soa_transactions WHERE id=?', [id])
-  return { success: true }
 })
 ipcMain.handle('soa:balance', async (_, clientId) => {
   return get('SELECT COALESCE(SUM(debit-credit),0) as balance FROM soa_transactions WHERE client_id=?', [clientId])

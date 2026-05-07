@@ -31,6 +31,7 @@ export interface Company {
   id: string
   name: string
   trn: string
+  po_box: string
   address: string
   phone: string
   email: string

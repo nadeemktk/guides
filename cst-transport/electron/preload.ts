@@ -16,7 +16,7 @@ const api = {
   updateCompany:       (data: any) => ipcRenderer.invoke('companies:update', data),
   deleteCompany:       (id: string) => ipcRenderer.invoke('companies:delete', id),
   // Clients
-  listClients:         () => ipcRenderer.invoke('clients:list'),
+  listClients:         (filters?: any) => ipcRenderer.invoke('clients:list', filters),
   getClient:           (id: string) => ipcRenderer.invoke('clients:get', id),
   createClient:        (data: any) => ipcRenderer.invoke('clients:create', data),
   updateClient:        (data: any) => ipcRenderer.invoke('clients:update', data),
@@ -56,9 +56,6 @@ const api = {
   invoiceStats:        () => ipcRenderer.invoke('invoices:stats'),
   // SOA
   listSOA:             (filters?: any) => ipcRenderer.invoke('soa:list', filters),
-  addSOATransaction:   (data: any) => ipcRenderer.invoke('soa:add_transaction', data),
-  updateSOATransaction:(data: any) => ipcRenderer.invoke('soa:update_transaction', data),
-  deleteSOATransaction:(id: string) => ipcRenderer.invoke('soa:delete_transaction', id),
   getSOABalance:       (clientId: string) => ipcRenderer.invoke('soa:balance', clientId),
   // Expenses
   listExpenses:        (filters?: any) => ipcRenderer.invoke('expenses:list', filters),
