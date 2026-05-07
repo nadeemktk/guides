@@ -24,10 +24,28 @@ export interface Permissions {
   reminders?: { configure?: boolean }
   users?:     { create?: boolean; edit?: boolean; delete?: boolean; view?: boolean }
   ai?:        { access?: boolean }
+  clients?:   { view?: boolean; edit?: boolean }
+}
+
+export interface Company {
+  id: string
+  name: string
+  trn: string
+  address: string
+  phone: string
+  email: string
+  bank_name: string
+  bank_account: string
+  bank_iban: string
+  bank_swift: string
+  logo_path: string
+  is_default: boolean
+  created_at: string
 }
 
 export interface Client {
   id: string
+  customer_code: string
   company_name: string
   contact_name: string
   mobile: string
@@ -74,6 +92,21 @@ export interface Driver {
   created_at: string
 }
 
+export interface Staff {
+  id: string
+  full_name: string
+  mobile: string
+  role: string
+  base_salary: number
+  joining_date: string | null
+  id_number: string
+  id_expiry: string | null
+  nationality: string
+  status: 'active' | 'inactive'
+  notes: string
+  created_at: string
+}
+
 export interface Trip {
   id: string
   trip_date: string
@@ -101,6 +134,7 @@ export interface Trip {
   booked_by: string
   created_by: string | null
   invoice_id: string | null
+  lpo_number: string
   reminder_sent: number
   last_reminder: string | null
   remarks: string
@@ -114,9 +148,7 @@ export interface InvoiceItem {
   trip_id: string | null
   description: string
   vehicle_type: string
-  vehicle_plate: string
-  driver_name: string
-  trip_date: string
+  duration: string
   quantity: number
   unit_price: number
   line_total: number
@@ -126,11 +158,19 @@ export interface InvoiceItem {
 export interface Invoice {
   id: string
   invoice_number: string
+  company_id: string | null
   client_id: string | null
   client_name: string
+  client_address: string
+  client_trn: string
+  customer_code: string
   invoice_date: string
   due_date: string | null
   service_period: string
+  po_number: string
+  delivery_note: string
+  sales_man: string
+  lpo_number: string
   subtotal: number
   tax_rate: number
   tax_amount: number
@@ -143,6 +183,15 @@ export interface Invoice {
   terms: string
   created_by: string | null
   items?: InvoiceItem[]
+  company_name?: string
+  company_trn?: string
+  company_address?: string
+  company_phone?: string
+  company_email?: string
+  bank_name?: string
+  bank_account?: string
+  bank_iban?: string
+  bank_swift?: string
   created_at: string
 }
 
@@ -155,9 +204,13 @@ export interface SOATransaction {
   reference: string
   invoice_id: string | null
   description: string
+  vehicle_info: string
+  lpo_number: string
   debit: number
   credit: number
   balance: number
+  status: string
+  remarks: string
   created_at: string
 }
 
@@ -178,7 +231,9 @@ export interface VehicleExpense {
 
 export interface DriverSalary {
   id: string
-  driver_id: string
+  driver_id: string | null
+  staff_id: string | null
+  employee_type: 'driver' | 'staff'
   full_name?: string
   mobile?: string
   period_month: number
@@ -241,6 +296,11 @@ export interface AppSettings {
   theme: string
   anthropic_key: string
   logo_path: string
+  bank_name: string
+  bank_account: string
+  bank_iban: string
+  bank_swift: string
+  bank_beneficiary: string
 }
 
 export interface DashboardData {
@@ -265,9 +325,9 @@ export interface ChatMessage {
   created_at: string
 }
 
-// Navigation pages
 export type Page =
   | 'dashboard'
+  | 'clients'
   | 'trips'
   | 'invoices'
   | 'soa'

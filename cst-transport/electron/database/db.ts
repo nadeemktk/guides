@@ -5,6 +5,23 @@ import { app } from 'electron'
 let db: Database.Database
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS companies (
+  id           TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  trn          TEXT,
+  address      TEXT,
+  phone        TEXT,
+  email        TEXT,
+  bank_name    TEXT,
+  bank_account TEXT,
+  bank_iban    TEXT,
+  bank_swift   TEXT,
+  logo_path    TEXT,
+  is_default   INTEGER DEFAULT 0,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id          TEXT PRIMARY KEY,
   username    TEXT UNIQUE NOT NULL,
@@ -21,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS clients (
   id            TEXT PRIMARY KEY,
+  customer_code TEXT,
   company_name  TEXT NOT NULL,
   contact_name  TEXT,
   mobile        TEXT,
@@ -70,14 +88,38 @@ CREATE TABLE IF NOT EXISTS drivers (
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS staff (
+  id           TEXT PRIMARY KEY,
+  full_name    TEXT NOT NULL,
+  mobile       TEXT,
+  role         TEXT NOT NULL DEFAULT 'staff',
+  base_salary  REAL NOT NULL DEFAULT 0,
+  joining_date TEXT,
+  id_number    TEXT,
+  id_expiry    TEXT,
+  nationality  TEXT,
+  status       TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
+  notes        TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS invoices (
   id              TEXT PRIMARY KEY,
   invoice_number  TEXT UNIQUE NOT NULL,
+  company_id      TEXT REFERENCES companies(id),
   client_id       TEXT REFERENCES clients(id),
   client_name     TEXT NOT NULL,
+  client_address  TEXT,
+  client_trn      TEXT,
+  customer_code   TEXT,
   invoice_date    TEXT NOT NULL,
   due_date        TEXT,
   service_period  TEXT,
+  po_number       TEXT,
+  delivery_note   TEXT,
+  sales_man       TEXT,
+  lpo_number      TEXT,
   subtotal        REAL NOT NULL DEFAULT 0,
   tax_rate        REAL NOT NULL DEFAULT 5,
   tax_amount      REAL NOT NULL DEFAULT 0,
@@ -120,6 +162,7 @@ CREATE TABLE IF NOT EXISTS trips (
   booked_by       TEXT,
   created_by      TEXT REFERENCES users(id),
   invoice_id      TEXT REFERENCES invoices(id),
+  lpo_number      TEXT,
   reminder_sent   INTEGER DEFAULT 0,
   last_reminder   TEXT,
   remarks         TEXT,
@@ -133,9 +176,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
   trip_id         TEXT REFERENCES trips(id),
   description     TEXT NOT NULL,
   vehicle_type    TEXT,
-  vehicle_plate   TEXT,
-  driver_name     TEXT,
-  trip_date       TEXT,
+  duration        TEXT,
   quantity        REAL NOT NULL DEFAULT 1,
   unit_price      REAL NOT NULL DEFAULT 0,
   line_total      REAL NOT NULL DEFAULT 0,
@@ -150,9 +191,13 @@ CREATE TABLE IF NOT EXISTS soa_transactions (
   reference       TEXT,
   invoice_id      TEXT REFERENCES invoices(id),
   description     TEXT NOT NULL,
+  vehicle_info    TEXT,
+  lpo_number      TEXT,
   debit           REAL NOT NULL DEFAULT 0,
   credit          REAL NOT NULL DEFAULT 0,
   balance         REAL NOT NULL DEFAULT 0,
+  status          TEXT DEFAULT 'unpaid',
+  remarks         TEXT,
   created_by      TEXT REFERENCES users(id),
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -185,7 +230,9 @@ CREATE TABLE IF NOT EXISTS driver_assignments (
 
 CREATE TABLE IF NOT EXISTS driver_salaries (
   id              TEXT PRIMARY KEY,
-  driver_id       TEXT NOT NULL REFERENCES drivers(id),
+  driver_id       TEXT,
+  staff_id        TEXT,
+  employee_type   TEXT NOT NULL DEFAULT 'driver' CHECK (employee_type IN ('driver','staff')),
   period_month    INTEGER NOT NULL,
   period_year     INTEGER NOT NULL,
   base_salary     REAL NOT NULL DEFAULT 0,
@@ -204,8 +251,7 @@ CREATE TABLE IF NOT EXISTS driver_salaries (
   status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','partial')),
   created_by      TEXT REFERENCES users(id),
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(driver_id, period_month, period_year)
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS payment_reminders (
@@ -310,10 +356,34 @@ INSERT OR IGNORE INTO app_settings(key, value) VALUES
   ('invoice_counter', '1000'),
   ('theme',           'dark'),
   ('anthropic_key',   ''),
-  ('logo_path',       '');
+  ('logo_path',       ''),
+  ('bank_name',       'First Abu Dhabi Bank (FAB)'),
+  ('bank_account',    '152 132 3764 979 016'),
+  ('bank_iban',       'AE78035 152 132 3764 979 016'),
+  ('bank_swift',      'NBADAEAA'),
+  ('bank_beneficiary','City Star Transport Passengers LLC');
 
 INSERT OR IGNORE INTO reminder_config(id) VALUES ('singleton');
 `
+
+const MIGRATIONS = [
+  `ALTER TABLE clients ADD COLUMN customer_code TEXT`,
+  `ALTER TABLE invoices ADD COLUMN company_id TEXT`,
+  `ALTER TABLE invoices ADD COLUMN client_address TEXT`,
+  `ALTER TABLE invoices ADD COLUMN client_trn TEXT`,
+  `ALTER TABLE invoices ADD COLUMN customer_code TEXT`,
+  `ALTER TABLE invoices ADD COLUMN po_number TEXT`,
+  `ALTER TABLE invoices ADD COLUMN delivery_note TEXT`,
+  `ALTER TABLE invoices ADD COLUMN sales_man TEXT`,
+  `ALTER TABLE invoices ADD COLUMN lpo_number TEXT`,
+  `ALTER TABLE trips ADD COLUMN lpo_number TEXT`,
+  `ALTER TABLE soa_transactions ADD COLUMN vehicle_info TEXT`,
+  `ALTER TABLE soa_transactions ADD COLUMN lpo_number TEXT`,
+  `ALTER TABLE soa_transactions ADD COLUMN status TEXT DEFAULT 'unpaid'`,
+  `ALTER TABLE soa_transactions ADD COLUMN remarks TEXT`,
+  `ALTER TABLE driver_salaries ADD COLUMN staff_id TEXT`,
+  `ALTER TABLE driver_salaries ADD COLUMN employee_type TEXT NOT NULL DEFAULT 'driver'`,
+]
 
 export function getDatabase(): Database.Database {
   if (db) return db
@@ -326,33 +396,26 @@ export function getDatabase(): Database.Database {
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
 
+  for (const migration of MIGRATIONS) {
+    try { db.exec(migration) } catch {}
+  }
+
   return db
 }
 
 export function closeDatabase(): void {
-  if (db) {
-    db.close()
-  }
+  if (db) db.close()
 }
 
-export function all<T = Record<string, unknown>>(
-  sql: string,
-  params: unknown[] = []
-): T[] {
+export function all<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T[] {
   return getDatabase().prepare(sql).all(...params) as T[]
 }
 
-export function get<T = Record<string, unknown>>(
-  sql: string,
-  params: unknown[] = []
-): T | undefined {
+export function get<T = Record<string, unknown>>(sql: string, params: unknown[] = []): T | undefined {
   return getDatabase().prepare(sql).get(...params) as T | undefined
 }
 
-export function run(
-  sql: string,
-  params: unknown[] = []
-): Database.RunResult {
+export function run(sql: string, params: unknown[] = []): Database.RunResult {
   return getDatabase().prepare(sql).run(...params)
 }
 

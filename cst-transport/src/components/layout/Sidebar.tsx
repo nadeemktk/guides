@@ -2,7 +2,7 @@ import React from 'react'
 import {
   LayoutDashboard, FileText, BookOpen, Car, Users, DollarSign,
   BarChart2, Settings, Bell, Activity, Bot, Truck, Shield,
-  Receipt, Wrench, ClipboardList
+  Receipt, Wrench, ClipboardList, Building2
 } from 'lucide-react'
 import { useApp } from '../../contexts/AppContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -22,12 +22,13 @@ export default function Sidebar() {
 
   const navItems: NavItem[] = [
     { id: 'dashboard',  label: 'Dashboard',        icon: LayoutDashboard, group: 'Main' },
+    { id: 'clients',    label: 'Clients',           icon: Building2,       group: 'Operations' },
     { id: 'trips',      label: 'Daily Trips',       icon: ClipboardList,   group: 'Operations' },
     { id: 'invoices',   label: 'Invoices',          icon: Receipt,         group: 'Operations' },
     { id: 'soa',        label: 'Statement of A/C',  icon: BookOpen,        group: 'Operations' },
     { id: 'vehicles',   label: 'Vehicles',          icon: Car,             group: 'Fleet' },
     { id: 'drivers',    label: 'Drivers',           icon: Users,           group: 'Fleet' },
-    { id: 'salaries',   label: 'Driver Salaries',   icon: DollarSign,      group: 'Fleet' },
+    { id: 'salaries',   label: 'Salaries',           icon: DollarSign,      group: 'Fleet' },
     { id: 'expenses',   label: 'Vehicle Expenses',  icon: Wrench,          group: 'Fleet' },
     { id: 'reports',    label: 'Reports',           icon: BarChart2,       group: 'Intelligence' },
     { id: 'ai',         label: 'CST Chat AI',       icon: Bot,             group: 'Intelligence' },
@@ -43,6 +44,7 @@ export default function Sidebar() {
       case 'dashboard':  return hasPermission('dashboard', 'view')
       case 'trips':      return hasPermission('trips', 'view')
       case 'invoices':   return hasPermission('invoices', 'create') || hasPermission('invoices', 'edit')
+      case 'clients':    return hasPermission('clients', 'view') || user?.role === 'editor'
       case 'soa':        return hasPermission('soa', 'view')
       case 'vehicles':   return hasPermission('vehicles', 'view')
       case 'drivers':    return hasPermission('drivers', 'view')

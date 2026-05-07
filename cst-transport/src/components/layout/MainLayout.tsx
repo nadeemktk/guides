@@ -5,6 +5,7 @@ import { useApp } from '../../contexts/AppContext'
 
 // Lazy-load all page modules
 const Dashboard     = React.lazy(() => import('../dashboard/Dashboard'))
+const Clients       = React.lazy(() => import('../clients/ClientsModule'))
 const Trips         = React.lazy(() => import('../trips/TripsModule'))
 const Invoices      = React.lazy(() => import('../invoices/InvoicesModule'))
 const SOA           = React.lazy(() => import('../soa/SOAModule'))
@@ -36,6 +37,7 @@ export default function MainLayout() {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':  return <Dashboard />
+      case 'clients':    return <Clients />
       case 'trips':      return <Trips />
       case 'invoices':   return <Invoices />
       case 'soa':        return <SOA />

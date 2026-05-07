@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Save, Key, Building2, Bell } from 'lucide-react'
+import { Save, Key, Building2, Bell, Landmark } from 'lucide-react'
 import { useApp } from '../../contexts/AppContext'
 import type { AppSettings } from '../../types'
 
@@ -7,7 +7,7 @@ export default function SettingsPage() {
   const { settings, refreshSettings } = useApp()
   const [form, setForm] = useState<AppSettings>(settings)
   const [saved, setSaved] = useState(false)
-  const [tab, setTab] = useState<'company' | 'system' | 'ai'>('company')
+  const [tab, setTab] = useState<'company' | 'system' | 'bank' | 'ai'>('company')
 
   useEffect(() => {
     setForm(settings)
@@ -29,9 +29,10 @@ export default function SettingsPage() {
   )
 
   const tabs = [
-    { id: 'company', label: 'Company', icon: Building2 },
-    { id: 'system',  label: 'System',  icon: Bell },
-    { id: 'ai',      label: 'AI / API', icon: Key }
+    { id: 'company', label: 'Company',    icon: Building2 },
+    { id: 'system',  label: 'System',     icon: Bell },
+    { id: 'bank',    label: 'Bank',       icon: Landmark },
+    { id: 'ai',      label: 'AI / API',   icon: Key }
   ] as const
 
   return (
@@ -116,6 +117,37 @@ export default function SettingsPage() {
               <div className="form-group">
                 <label className="label">Invoice Start Number</label>
                 {f('invoice_counter')}
+              </div>
+            </div>
+          </>
+        )}
+
+        {tab === 'bank' && (
+          <>
+            <h3 className="section-title">Bank Account Details</h3>
+            <p className="text-xs text-slate-500 mb-4">These details appear on printed invoices when no company is selected.</p>
+            <div className="grid grid-cols-1 gap-4">
+              <div className="form-group">
+                <label className="label">Beneficiary Name</label>
+                {f('bank_beneficiary')}
+              </div>
+              <div className="form-group">
+                <label className="label">Bank Name</label>
+                {f('bank_name')}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="form-group">
+                  <label className="label">Account Number</label>
+                  {f('bank_account')}
+                </div>
+                <div className="form-group">
+                  <label className="label">SWIFT Code</label>
+                  {f('bank_swift')}
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="label">IBAN</label>
+                {f('bank_iban')}
               </div>
             </div>
           </>

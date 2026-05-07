@@ -1,50 +1,65 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { DollarSign, Save, Printer, ChevronLeft, ChevronRight } from 'lucide-react'
-import type { Driver, DriverSalary } from '../../types'
+import { DollarSign, Save, Printer, ChevronLeft, ChevronRight, Users, UserCheck } from 'lucide-react'
+import type { Driver, Staff, DriverSalary } from '../../types'
 import { useAuth } from '../../contexts/AuthContext'
 import { useApp } from '../../contexts/AppContext'
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+const BLANK_FORM = {
+  base_salary: '', overtime_hours: '0', overtime_rate: '0', overtime_amount: '0',
+  bonus: '0', deductions: '0', deduction_reason: '',
+  amount_paid: '0', payment_date: '', payment_method: 'cash', notes: ''
+}
+
+type EmpTab = 'drivers' | 'staff'
 
 export default function SalariesModule() {
   const { user } = useAuth()
   const { settings } = useApp()
   const curr = settings.currency || 'AED'
 
+  const [empTab, setEmpTab] = useState<EmpTab>('drivers')
   const [drivers, setDrivers] = useState<Driver[]>([])
+  const [staffList, setStaffList] = useState<Staff[]>([])
   const [salaries, setSalaries] = useState<DriverSalary[]>([])
-  const [selectedDriver, setSelectedDriver] = useState<string>('')
+  const [selectedId, setSelectedId] = useState<string>('')
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth() + 1)
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
-  const [form, setForm] = useState({
-    base_salary: '',
-    overtime_hours: '0',
-    overtime_rate: '0',
-    overtime_amount: '0',
-    bonus: '0',
-    deductions: '0',
-    deduction_reason: '',
-    amount_paid: '0',
-    payment_date: '',
-    payment_method: 'cash',
-    notes: ''
-  })
+  const [form, setForm] = useState(BLANK_FORM)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     window.api.listDrivers().then(ds => {
       setDrivers(ds as Driver[])
-      if ((ds as Driver[]).length > 0 && !selectedDriver) setSelectedDriver((ds as Driver[])[0].id)
+    })
+    window.api.listStaff().then(st => {
+      setStaffList(st as Staff[])
     })
   }, [])
 
+  // Auto-select first when tab changes
+  useEffect(() => {
+    setSelectedId('')
+    setForm(BLANK_FORM)
+    setSalaries([])
+  }, [empTab])
+
+  const isDriver = empTab === 'drivers'
+  const employees = isDriver ? drivers : staffList
+  const selected = employees.find(e => e.id === selectedId) as any
+
   const load = useCallback(async () => {
-    if (!selectedDriver) return
-    const [driver] = drivers.filter(d => d.id === selectedDriver)
-    const existing = await window.api.getSalary({ driver_id: selectedDriver, month: currentMonth, year: currentYear })
+    if (!selectedId) return
+    let existing: DriverSalary | undefined
+    if (isDriver) {
+      existing = await window.api.getSalary({ driver_id: selectedId, month: currentMonth, year: currentYear }) as DriverSalary | undefined
+    } else {
+      existing = await window.api.getStaffSalary({ staff_id: selectedId, month: currentMonth, year: currentYear }) as DriverSalary | undefined
+    }
     if (existing) {
       setForm({
-        base_salary: String(existing.base_salary || driver?.base_salary || 0),
+        base_salary: String(existing.base_salary || selected?.base_salary || 0),
         overtime_hours: String(existing.overtime_hours || 0),
         overtime_rate: String(existing.overtime_rate || 0),
         overtime_amount: String(existing.overtime_amount || 0),
@@ -57,11 +72,13 @@ export default function SalariesModule() {
         notes: existing.notes || ''
       })
     } else {
-      setForm(p => ({ ...p, base_salary: String(driver?.base_salary || 0) }))
+      setForm({ ...BLANK_FORM, base_salary: String(selected?.base_salary || 0) })
     }
-    const list = await window.api.listSalaries({ driver_id: selectedDriver })
-    setSalaries(list as DriverSalary[])
-  }, [selectedDriver, currentMonth, currentYear, drivers])
+    const history = await window.api.listSalaries(
+      isDriver ? { driver_id: selectedId } : { staff_id: selectedId }
+    )
+    setSalaries(history as DriverSalary[])
+  }, [selectedId, currentMonth, currentYear, isDriver, selected?.base_salary])
 
   useEffect(() => { load() }, [load])
 
@@ -80,7 +97,7 @@ export default function SalariesModule() {
 
   const handleSave = async () => {
     await window.api.saveSalary({
-      driver_id: selectedDriver,
+      ...(isDriver ? { driver_id: selectedId, employee_type: 'driver' } : { staff_id: selectedId, employee_type: 'staff' }),
       period_month: currentMonth,
       period_year: currentYear,
       base_salary: parseFloat(form.base_salary)||0,
@@ -102,23 +119,22 @@ export default function SalariesModule() {
   }
 
   const handlePrint = () => {
-    const driver = drivers.find(d => d.id === selectedDriver)
-    const content = `
-      <!DOCTYPE html><html><head>
-      <title>Salary Slip – ${driver?.full_name}</title>
+    if (!selected) return
+    const label = isDriver ? 'Driver' : 'Staff'
+    const html = `<!DOCTYPE html><html><head>
+      <title>Salary Slip – ${selected.full_name}</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', sans-serif; color: #1e293b; padding: 40px; max-width: 600px; margin: 0 auto; }
         h1 { font-size: 22px; font-weight: 900; color: #1d4ed8; }
+        .company p { font-size: 12px; color: #64748b; margin-top: 2px; }
         h2 { font-size: 18px; font-weight: 700; margin: 16px 0 8px; }
-        .company { margin-bottom: 24px; }
-        .company p { font-size: 12px; color: #64748b; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
         td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
         td:last-child { text-align: right; font-weight: 600; }
         .total { font-size: 16px; font-weight: 900; color: #1d4ed8; }
         .signature { margin-top: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-        .signature .line { border-top: 1px solid #94a3b8; padding-top: 8px; font-size: 11px; color: #64748b; }
+        .line { border-top: 1px solid #94a3b8; padding-top: 8px; font-size: 11px; color: #64748b; }
       </style>
       </head><body>
       <div class="company">
@@ -127,8 +143,9 @@ export default function SalariesModule() {
       </div>
       <h2>SALARY SLIP – ${MONTHS[currentMonth-1]} ${currentYear}</h2>
       <table>
-        <tr><td>Driver Name</td><td>${driver?.full_name}</td></tr>
-        <tr><td>Mobile</td><td>${driver?.mobile}</td></tr>
+        <tr><td>${label} Name</td><td>${selected.full_name}</td></tr>
+        <tr><td>Mobile</td><td>${selected.mobile || '—'}</td></tr>
+        ${isDriver ? `<tr><td>License</td><td>${(selected as Driver).license_number || '—'}</td></tr>` : `<tr><td>Role</td><td>${(selected as Staff).role || '—'}</td></tr>`}
         <tr><td>Period</td><td>${MONTHS[currentMonth-1]} ${currentYear}</td></tr>
         <tr><td colspan="2"></td></tr>
         <tr><td>Basic Salary</td><td>${curr} ${parseFloat(form.base_salary||'0').toFixed(2)}</td></tr>
@@ -139,32 +156,29 @@ export default function SalariesModule() {
         <tr><td>Amount Paid</td><td>${curr} ${parseFloat(form.amount_paid||'0').toFixed(2)}</td></tr>
         <tr style="color:#dc2626;font-weight:700"><td>REMAINING BALANCE</td><td>${curr} ${remaining.toFixed(2)}</td></tr>
       </table>
-      <p style="font-size:11px;color:#64748b">Payment Method: ${form.payment_method} | Payment Date: ${form.payment_date || 'N/A'}</p>
+      <p style="font-size:11px;color:#64748b">Payment: ${form.payment_method} | Date: ${form.payment_date || 'N/A'}</p>
       ${form.notes ? `<p style="font-size:11px;margin-top:8px">Notes: ${form.notes}</p>` : ''}
       <div class="signature">
         <div><div class="line">Employee Signature</div></div>
-        <div><div class="line">Employer Signature & Stamp</div></div>
+        <div><div class="line">Employer Signature &amp; Stamp</div></div>
       </div>
       <p style="font-size:10px;color:#94a3b8;margin-top:24px;text-align:center">Generated: ${new Date().toLocaleString()}</p>
-      </body></html>
-    `
+      </body></html>`
     const w = window.open('', '_blank')!
-    w.document.write(content)
+    w.document.write(html)
     w.document.close()
     setTimeout(() => { w.print(); w.close() }, 300)
   }
-
-  const selectedDriverObj = drivers.find(d => d.id === selectedDriver)
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Driver Salaries</h1>
-          <p className="text-slate-500 text-sm">Track and manage driver salary payments</p>
+          <h1 className="page-title">Salaries</h1>
+          <p className="text-slate-500 text-sm">Track driver &amp; staff salary payments</p>
         </div>
         <div className="flex gap-2">
-          {selectedDriver && (
+          {selectedId && (
             <>
               <button onClick={handlePrint} className="btn-secondary"><Printer className="w-4 h-4" /> Print Slip</button>
               <button onClick={handleSave} className="btn-primary"><Save className="w-4 h-4" />{saved ? 'Saved!' : 'Save'}</button>
@@ -173,26 +187,47 @@ export default function SalariesModule() {
         </div>
       </div>
 
+      {/* Driver / Staff tabs */}
+      <div className="flex gap-1 mb-5 p-1 bg-slate-900 rounded-xl w-fit">
+        <button
+          onClick={() => setEmpTab('drivers')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${empTab === 'drivers' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+        >
+          <Users className="w-4 h-4" /> Drivers
+        </button>
+        <button
+          onClick={() => setEmpTab('staff')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${empTab === 'staff' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+        >
+          <UserCheck className="w-4 h-4" /> Staff
+        </button>
+      </div>
+
       <div className="grid grid-cols-3 gap-5">
-        {/* Left: Driver list */}
+        {/* Employee list */}
         <div className="space-y-2">
-          <h3 className="section-title">Drivers</h3>
-          {drivers.map(d => (
+          <h3 className="section-title">{isDriver ? 'Drivers' : 'Staff'}</h3>
+          {employees.length === 0 ? (
+            <p className="text-slate-500 text-sm px-1">No {isDriver ? 'drivers' : 'staff'} found</p>
+          ) : employees.map(e => (
             <button
-              key={d.id}
-              onClick={() => setSelectedDriver(d.id)}
-              className={`w-full text-left p-3 rounded-xl border transition-all ${selectedDriver === d.id ? 'bg-blue-600/20 border-blue-600/50 text-blue-300' : 'card hover:border-slate-600 text-slate-300'}`}
+              key={e.id}
+              onClick={() => setSelectedId(e.id)}
+              className={`w-full text-left p-3 rounded-xl border transition-all ${selectedId === e.id ? 'bg-blue-600/20 border-blue-600/50 text-blue-300' : 'card hover:border-slate-600 text-slate-300'}`}
             >
-              <div className="font-medium text-sm">{d.full_name}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{curr} {d.base_salary.toLocaleString()}/mo</div>
+              <div className="font-medium text-sm">{e.full_name}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{curr} {e.base_salary.toLocaleString()}/mo</div>
+              {'role' in e && <div className="text-xs text-slate-600">{(e as Staff).role}</div>}
             </button>
           ))}
         </div>
 
-        {/* Right: Salary form */}
+        {/* Salary form */}
         <div className="col-span-2">
-          {!selectedDriver ? (
-            <div className="flex items-center justify-center h-64 text-slate-600">Select a driver</div>
+          {!selectedId ? (
+            <div className="flex items-center justify-center h-64 text-slate-600">
+              Select a {isDriver ? 'driver' : 'staff member'}
+            </div>
           ) : (
             <>
               {/* Month navigator */}
@@ -206,19 +241,20 @@ export default function SalariesModule() {
                 </button>
               </div>
 
-              {/* Driver info */}
+              {/* Employee info */}
               <div className="card p-4 mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-600/20 flex items-center justify-center font-bold text-purple-400">
-                    {selectedDriverObj?.full_name.split(' ').map(n=>n[0]).slice(0,2).join('')}
+                  <div className={`w-10 h-10 rounded-xl ${isDriver ? 'bg-purple-600/20' : 'bg-teal-600/20'} flex items-center justify-center font-bold ${isDriver ? 'text-purple-400' : 'text-teal-400'}`}>
+                    {selected?.full_name?.split(' ').map((n: string) => n[0]).slice(0,2).join('') || '?'}
                   </div>
                   <div>
-                    <div className="font-semibold text-slate-100">{selectedDriverObj?.full_name}</div>
-                    <div className="text-xs text-slate-500">{selectedDriverObj?.mobile}</div>
+                    <div className="font-semibold text-slate-100">{selected?.full_name}</div>
+                    <div className="text-xs text-slate-500">{selected?.mobile}</div>
+                    {'role' in (selected || {}) && <div className="text-xs text-slate-400">{(selected as Staff)?.role}</div>}
                   </div>
                   <div className="ml-auto">
                     <div className="text-xs text-slate-500">Base Salary</div>
-                    <div className="font-bold text-slate-100">{curr} {selectedDriverObj?.base_salary.toLocaleString()}</div>
+                    <div className="font-bold text-slate-100">{curr} {selected?.base_salary?.toLocaleString()}</div>
                   </div>
                 </div>
               </div>
@@ -255,7 +291,7 @@ export default function SalariesModule() {
                 </div>
                 <div className="form-group">
                   <label className="label">Deduction Reason</label>
-                  <input className="input" value={form.deduction_reason} onChange={e => set('deduction_reason', e.target.value)} placeholder="Reason for deductions..." />
+                  <input className="input" value={form.deduction_reason} onChange={e => set('deduction_reason', e.target.value)} />
                 </div>
 
                 {/* Summary */}
@@ -296,7 +332,7 @@ export default function SalariesModule() {
                 </div>
               </div>
 
-              {/* Salary history */}
+              {/* History */}
               {salaries.length > 0 && (
                 <div className="mt-5">
                   <h3 className="section-title">Salary History</h3>
@@ -304,11 +340,7 @@ export default function SalariesModule() {
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Period</th>
-                          <th>Gross</th>
-                          <th>Paid</th>
-                          <th>Remaining</th>
-                          <th>Status</th>
+                          <th>Period</th><th>Gross</th><th>Paid</th><th>Remaining</th><th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
