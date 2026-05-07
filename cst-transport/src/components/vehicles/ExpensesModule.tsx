@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Edit2, Trash2, TrendingUp, Wrench } from 'lucide-react'
+import { Plus, Edit2, Trash2, FileDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import type { VehicleExpense, Vehicle } from '../../types'
 import Modal from '../shared/Modal'
 import ConfirmDialog from '../shared/ConfirmDialog'
 import { useAuth } from '../../contexts/AuthContext'
 import { useApp } from '../../contexts/AppContext'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function ExpensesModule() {
   const { user } = useAuth()
@@ -65,6 +67,78 @@ export default function ExpensesModule() {
     total: expenses.filter(e => e.category === c).reduce((s, e) => s + e.amount, 0)
   })).filter(c => c.total > 0)
 
+  const handleExportPDF = () => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    const now = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+
+    // Header
+    doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text('VEHICLE EXPENSES REPORT', pageW / 2, 18, { align: 'center' })
+    doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
+    const vehicleLabel = selectedVehicle
+      ? vehicles.find(v => v.id === selectedVehicle)?.plate_number || ''
+      : 'All Vehicles'
+    const catLabel = filterCategory ? filterCategory.charAt(0).toUpperCase() + filterCategory.slice(1) : 'All Categories'
+    doc.text(`${vehicleLabel} | ${catLabel} | Generated: ${now}`, pageW / 2, 24, { align: 'center' })
+    doc.setTextColor(0)
+
+    // Summary by category
+    if (catTotals.length > 0) {
+      doc.setFontSize(10).setFont('helvetica', 'bold')
+      doc.text('Summary by Category', 14, 32)
+      autoTable(doc, {
+        startY: 35,
+        head: [['Category', `Amount (${curr})`]],
+        body: [
+          ...catTotals.map(c => [c.name, c.total.toFixed(2)]),
+          ['TOTAL', expenses.reduce((s, e) => s + e.amount, 0).toFixed(2)]
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [30, 64, 175], fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: { 1: { halign: 'right' } },
+        didParseCell: (data) => {
+          if (data.row.index === catTotals.length) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [241, 245, 249]
+          }
+        },
+        margin: { left: 14 },
+        tableWidth: 80
+      })
+    }
+
+    // Main expenses table
+    const tableY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 8 : 40
+    doc.setFontSize(10).setFont('helvetica', 'bold')
+    doc.text('Expense Details', 14, tableY)
+    autoTable(doc, {
+      startY: tableY + 3,
+      head: [['Date', 'Plate No', 'Vehicle Type', 'Category', 'Description', 'Vendor', 'Receipt #', 'Odometer', `Amount (${curr})`]],
+      body: expenses.map(e => [
+        e.expense_date,
+        e.plate_number || '—',
+        e.vehicle_type || '—',
+        e.category.charAt(0).toUpperCase() + e.category.slice(1),
+        e.description,
+        e.vendor || '—',
+        e.receipt_number || '—',
+        e.odometer ? String(e.odometer) : '—',
+        e.amount.toFixed(2)
+      ]),
+      foot: [['', '', '', '', '', '', '', 'TOTAL', expenses.reduce((s, e) => s + e.amount, 0).toFixed(2)]],
+      theme: 'striped',
+      headStyles: { fillColor: [30, 64, 175], fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      footStyles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 8 },
+      columnStyles: { 8: { halign: 'right' } },
+      margin: { left: 14, right: 14 }
+    })
+
+    doc.save(`vehicle-expenses-${new Date().toISOString().split('T')[0]}.pdf`)
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -72,9 +146,16 @@ export default function ExpensesModule() {
           <h1 className="page-title">Vehicle Expenses</h1>
           <p className="text-slate-500 text-sm">Track all vehicle-related costs and profitability</p>
         </div>
-        <button onClick={() => { setEditing(null); setShowForm(true) }} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add Expense
-        </button>
+        <div className="flex gap-2">
+          {expenses.length > 0 && (
+            <button onClick={handleExportPDF} className="btn-secondary">
+              <FileDown className="w-4 h-4" /> Export PDF
+            </button>
+          )}
+          <button onClick={() => { setEditing(null); setShowForm(true) }} className="btn-primary">
+            <Plus className="w-4 h-4" /> Add Expense
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

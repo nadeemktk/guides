@@ -307,8 +307,13 @@ ipcMain.handle('vehicles:update', async (_, { id, ...data }) => {
   return { success: true }
 })
 ipcMain.handle('vehicles:delete', async (_, id) => {
-  run('DELETE FROM vehicles WHERE id=?', [id])
-  return { success: true }
+  return transaction(() => {
+    run('UPDATE trips SET vehicle_id=NULL WHERE vehicle_id=?', [id])
+    run('DELETE FROM driver_assignments WHERE vehicle_id=?', [id])
+    run('DELETE FROM vehicle_expenses WHERE vehicle_id=?', [id])
+    run('DELETE FROM vehicles WHERE id=?', [id])
+    return { success: true }
+  })
 })
 
 // DRIVERS
