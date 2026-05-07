@@ -376,7 +376,7 @@ INSERT OR IGNORE INTO app_settings(key, value) VALUES
 INSERT OR IGNORE INTO reminder_config(id) VALUES ('singleton');
 `
 
-const MIGRATIONS = [
+const MIGRATIONS: Array<string | (() => void)> = [
   `ALTER TABLE clients ADD COLUMN customer_code TEXT`,
   `ALTER TABLE invoices ADD COLUMN company_id TEXT`,
   `ALTER TABLE invoices ADD COLUMN client_address TEXT`,
@@ -426,6 +426,50 @@ const MIGRATIONS = [
   `ALTER TABLE driver_salaries ADD COLUMN other_deduction_reason TEXT`,
   // payroll workflow status (separate from payment status)
   `ALTER TABLE driver_salaries ADD COLUMN payroll_status TEXT DEFAULT 'draft'`,
+  // Rebuild driver_salaries to remove NOT NULL constraint on driver_id (required for staff payroll)
+  () => {
+    const d = getDatabase()
+    const tableInfo = d.pragma('table_info(driver_salaries)') as any[]
+    const col = tableInfo.find((c: any) => c.name === 'driver_id')
+    if (!col || col.notnull === 0) return
+    const colNames = new Set(tableInfo.map((c: any) => c.name))
+    const hasExt = colNames.has('food_allowance')
+    d.exec(`
+      DROP TABLE IF EXISTS driver_salaries_v2;
+      CREATE TABLE driver_salaries_v2 (
+        id TEXT PRIMARY KEY, driver_id TEXT, staff_id TEXT,
+        employee_type TEXT NOT NULL DEFAULT 'driver' CHECK (employee_type IN ('driver','staff')),
+        period_month INTEGER NOT NULL, period_year INTEGER NOT NULL,
+        base_salary REAL NOT NULL DEFAULT 0,
+        overtime_hours REAL DEFAULT 0, overtime_rate REAL DEFAULT 0, overtime_amount REAL DEFAULT 0,
+        deductions REAL DEFAULT 0, deduction_reason TEXT, bonus REAL DEFAULT 0,
+        gross_salary REAL NOT NULL DEFAULT 0, amount_paid REAL NOT NULL DEFAULT 0,
+        remaining REAL NOT NULL DEFAULT 0, payment_date TEXT, payment_method TEXT DEFAULT 'cash',
+        notes TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','partial')),
+        food_allowance REAL DEFAULT 0, accommodation REAL DEFAULT 0,
+        transport_allowance REAL DEFAULT 0, trip_incentives REAL DEFAULT 0,
+        advance_salary REAL DEFAULT 0, absence_deduction REAL DEFAULT 0,
+        traffic_fines REAL DEFAULT 0, penalties REAL DEFAULT 0,
+        loan_deduction REAL DEFAULT 0, other_deductions REAL DEFAULT 0,
+        other_deduction_reason TEXT, payroll_status TEXT DEFAULT 'draft',
+        created_by TEXT REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO driver_salaries_v2
+        SELECT id, driver_id, ${hasExt ? 'staff_id' : 'NULL'},
+               ${hasExt ? 'employee_type' : "'driver'"},
+               period_month, period_year, base_salary,
+               overtime_hours, overtime_rate, overtime_amount,
+               deductions, deduction_reason, bonus, gross_salary,
+               amount_paid, remaining, payment_date, payment_method, notes, status,
+               ${hasExt ? 'COALESCE(food_allowance,0),COALESCE(accommodation,0),COALESCE(transport_allowance,0),COALESCE(trip_incentives,0),COALESCE(advance_salary,0),COALESCE(absence_deduction,0),COALESCE(traffic_fines,0),COALESCE(penalties,0),COALESCE(loan_deduction,0),COALESCE(other_deductions,0),other_deduction_reason,COALESCE(payroll_status,\'draft\')' : '0,0,0,0,0,0,0,0,0,0,NULL,\'draft\''},
+               created_by, created_at, updated_at
+        FROM driver_salaries;
+      DROP TABLE driver_salaries;
+      ALTER TABLE driver_salaries_v2 RENAME TO driver_salaries
+    `)
+  },
 ]
 
 export function getDatabase(): Database.Database {
@@ -440,7 +484,10 @@ export function getDatabase(): Database.Database {
   db.exec(SCHEMA)
 
   for (const migration of MIGRATIONS) {
-    try { db.exec(migration) } catch {}
+    try {
+      if (typeof migration === 'string') db.exec(migration)
+      else migration()
+    } catch {}
   }
 
   return db
