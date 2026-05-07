@@ -13,9 +13,10 @@ const STATUS_BADGE: Record<string, string> = {
   partial: 'badge-partial', overdue: 'badge-overdue', cancelled: 'badge-draft'
 }
 
-const emptyCompany = (): Partial<Company> => ({
+const emptyCompany = (): Partial<Company> & { invoice_start?: string } => ({
   name: '', trn: '', po_box: '', address: '', phone: '', email: '',
-  bank_name: '', bank_account: '', bank_iban: '', bank_swift: '', is_default: false
+  bank_name: '', bank_account: '', bank_iban: '', bank_swift: '',
+  is_default: false, invoice_prefix: 'INV-', invoice_counter: 0, invoice_start: '1001'
 })
 
 export default function InvoicesModule() {
@@ -45,7 +46,7 @@ export default function InvoicesModule() {
 
   // Company management state
   const [showCompanyManager, setShowCompanyManager] = useState(false)
-  const [companyForm, setCompanyForm] = useState<Partial<Company>>(emptyCompany())
+  const [companyForm, setCompanyForm] = useState<Partial<Company> & { invoice_start?: string }>(emptyCompany())
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [deleteCompanyTarget, setDeleteCompanyTarget] = useState<Company | null>(null)
   const [savingCompany, setSavingCompany] = useState(false)
@@ -483,6 +484,51 @@ export default function InvoicesModule() {
                     </div>
                   </div>
                 </details>
+                {/* Invoice Numbering */}
+                <details open={!editingCompany} className="cursor-pointer">
+                  <summary className="text-xs font-semibold text-blue-400 select-none mb-2">
+                    Invoice Numbering Settings
+                  </summary>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="form-group">
+                      <label className="label">Invoice Prefix</label>
+                      <input
+                        className="input font-mono"
+                        placeholder="e.g. CST- or INV- or CS/2026/"
+                        value={companyForm.invoice_prefix || ''}
+                        onChange={e => setCompanyForm(p => ({ ...p, invoice_prefix: e.target.value }))}
+                      />
+                      <p className="text-[10px] text-slate-500 mt-0.5">The prefix attached before every invoice number</p>
+                    </div>
+                    <div className="form-group">
+                      {editingCompany ? (
+                        <>
+                          <label className="label">Invoice Counter (last used: {editingCompany.invoice_counter || 0})</label>
+                          <input
+                            className="input font-mono"
+                            type="number" min="0"
+                            value={companyForm.invoice_counter ?? editingCompany.invoice_counter ?? 0}
+                            onChange={e => setCompanyForm(p => ({ ...p, invoice_counter: parseInt(e.target.value) || 0 }))}
+                          />
+                          <p className="text-[10px] text-amber-500 mt-0.5">⚠ Next invoice will be #{(companyForm.invoice_counter ?? editingCompany.invoice_counter ?? 0) + 1}</p>
+                        </>
+                      ) : (
+                        <>
+                          <label className="label">Starting Invoice Number</label>
+                          <input
+                            className="input font-mono"
+                            type="number" min="1"
+                            value={(companyForm as any).invoice_start || '1001'}
+                            onChange={e => setCompanyForm(p => ({ ...p, invoice_start: e.target.value } as any))}
+                            placeholder="1001"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-0.5">First invoice will be {companyForm.invoice_prefix || 'INV-'}{(companyForm as any).invoice_start || '1001'}</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </details>
+
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="is_default" className="w-4 h-4 accent-blue-600"
                     checked={!!companyForm.is_default}
@@ -524,6 +570,9 @@ export default function InvoicesModule() {
                         {co.po_box && <div>P.O. Box: {co.po_box}</div>}
                         {co.address && <div>{co.address}</div>}
                         {co.bank_account && <div>Bank: {co.bank_name} | Acc: {co.bank_account}</div>}
+                        <div className="text-blue-400/80 font-mono">
+                          Next #: {co.invoice_prefix || 'INV-'}{(co.invoice_counter || 0) + 1}
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-1 flex-shrink-0">

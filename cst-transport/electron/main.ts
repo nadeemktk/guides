@@ -231,17 +231,29 @@ ipcMain.handle('companies:get', async (_, id) => get('SELECT * FROM companies WH
 ipcMain.handle('companies:create', async (_, data) => {
   const id = uuidv4()
   if (data.is_default) run(`UPDATE companies SET is_default=0`)
-  run(`INSERT INTO companies(id,name,trn,po_box,address,phone,email,bank_name,bank_account,bank_iban,bank_swift,logo_path,is_default)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  // invoice_counter stores the last-used number; first invoice = counter + 1
+  const startAt = Math.max(0, parseInt(data.invoice_start || '1000') - 1)
+  run(`INSERT INTO companies(id,name,trn,po_box,address,phone,email,bank_name,bank_account,bank_iban,bank_swift,logo_path,is_default,invoice_prefix,invoice_counter)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
-     data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'', data.is_default?1:0])
+     data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'',
+     data.is_default?1:0, data.invoice_prefix||'INV-', startAt])
   return { success: true, id }
 })
 ipcMain.handle('companies:update', async (_, { id, ...data }) => {
   if (data.is_default) run(`UPDATE companies SET is_default=0`)
-  run(`UPDATE companies SET name=?,trn=?,po_box=?,address=?,phone=?,email=?,bank_name=?,bank_account=?,bank_iban=?,bank_swift=?,logo_path=?,is_default=?,updated_at=datetime('now') WHERE id=?`,
-    [data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
-     data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'', data.is_default?1:0, id])
+  // Only update invoice_counter if explicitly provided (prevents accidental resets)
+  if (data.invoice_counter !== undefined && data.invoice_counter !== null) {
+    run(`UPDATE companies SET name=?,trn=?,po_box=?,address=?,phone=?,email=?,bank_name=?,bank_account=?,bank_iban=?,bank_swift=?,logo_path=?,is_default=?,invoice_prefix=?,invoice_counter=?,updated_at=datetime('now') WHERE id=?`,
+      [data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
+       data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'',
+       data.is_default?1:0, data.invoice_prefix||'INV-', parseInt(data.invoice_counter)||0, id])
+  } else {
+    run(`UPDATE companies SET name=?,trn=?,po_box=?,address=?,phone=?,email=?,bank_name=?,bank_account=?,bank_iban=?,bank_swift=?,logo_path=?,is_default=?,invoice_prefix=?,updated_at=datetime('now') WHERE id=?`,
+      [data.name, data.trn||'', data.po_box||'', data.address||'', data.phone||'', data.email||'',
+       data.bank_name||'', data.bank_account||'', data.bank_iban||'', data.bank_swift||'', data.logo_path||'',
+       data.is_default?1:0, data.invoice_prefix||'INV-', id])
+  }
   return { success: true }
 })
 ipcMain.handle('companies:delete', async (_, id) => {
@@ -412,11 +424,37 @@ ipcMain.handle('invoices:get', async (_, id) => {
 ipcMain.handle('invoices:create', async (_, data) => {
   return transaction(() => {
     const id = uuidv4()
-    const setting = get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_counter'])
-    const counter = parseInt(setting?.value || '1000') + 1
-    const prefix = (get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_prefix']))?.value || 'INV'
-    const invNumber = `${prefix}-${counter}`
-    run('UPDATE app_settings SET value=? WHERE key=?', [String(counter), 'invoice_counter'])
+
+    // Determine invoice number: per-company sequence takes priority over global settings
+    let invNumber: string
+    if (data.company_id) {
+      const co = get<any>('SELECT invoice_prefix, invoice_counter FROM companies WHERE id=?', [data.company_id])
+      if (co) {
+        const counter = (co.invoice_counter || 0) + 1
+        invNumber = `${co.invoice_prefix || 'INV-'}${counter}`
+        run('UPDATE companies SET invoice_counter=?, updated_at=datetime(\'now\') WHERE id=?', [counter, data.company_id])
+      } else {
+        // Fallback to global
+        const setting = get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_counter'])
+        const counter = parseInt(setting?.value || '1000') + 1
+        const prefix = (get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_prefix']))?.value || 'INV-'
+        invNumber = `${prefix}${counter}`
+        run('UPDATE app_settings SET value=? WHERE key=?', [String(counter), 'invoice_counter'])
+      }
+    } else {
+      // No company selected — use global settings
+      const setting = get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_counter'])
+      const counter = parseInt(setting?.value || '1000') + 1
+      const prefix = (get<any>('SELECT value FROM app_settings WHERE key=?', ['invoice_prefix']))?.value || 'INV-'
+      invNumber = `${prefix}${counter}`
+      run('UPDATE app_settings SET value=? WHERE key=?', [String(counter), 'invoice_counter'])
+    }
+
+    // Guard against duplicate invoice numbers (e.g. manual edits to counter)
+    const existing = get('SELECT id FROM invoices WHERE invoice_number=?', [invNumber])
+    if (existing) {
+      throw new Error(`Invoice number ${invNumber} already exists. Please check the company invoice counter in Manage Companies.`)
+    }
 
     run(`INSERT INTO invoices(id,invoice_number,company_id,client_id,client_name,client_address,client_trn,customer_code,
          invoice_date,due_date,service_period,po_number,delivery_note,sales_man,lpo_number,
@@ -433,10 +471,10 @@ ipcMain.handle('invoices:create', async (_, data) => {
     if (data.items?.length) {
       for (let i = 0; i < data.items.length; i++) {
         const item = data.items[i]
-        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
-             VALUES(?,?,?,?,?,?,?,?,?,?)`,
+        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,unit,duration,quantity,unit_price,line_total,sort_order)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
           [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
-           item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+           item.unit||'', item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
       }
     }
 
@@ -475,10 +513,10 @@ ipcMain.handle('invoices:update', async (_, { id, ...data }) => {
       run('DELETE FROM invoice_items WHERE invoice_id=?', [id])
       for (let i = 0; i < data.items.length; i++) {
         const item = data.items[i]
-        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,duration,quantity,unit_price,line_total,sort_order)
-             VALUES(?,?,?,?,?,?,?,?,?,?)`,
+        run(`INSERT INTO invoice_items(id,invoice_id,trip_id,description,vehicle_type,unit,duration,quantity,unit_price,line_total,sort_order)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
           [uuidv4(), id, item.trip_id||null, item.description, item.vehicle_type||'',
-           item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
+           item.unit||'', item.duration||'', item.quantity||1, item.unit_price||0, item.line_total||0, i])
       }
     }
 

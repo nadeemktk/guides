@@ -41,6 +41,8 @@ export interface Company {
   bank_swift: string
   logo_path: string
   is_default: boolean
+  invoice_prefix: string
+  invoice_counter: number
   created_at: string
 }
 
@@ -150,6 +152,7 @@ export interface InvoiceItem {
   trip_id: string | null
   description: string
   vehicle_type: string
+  unit: string
   duration: string
   quantity: number
   unit_price: number

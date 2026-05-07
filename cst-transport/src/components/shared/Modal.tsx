@@ -1,4 +1,5 @@
-import React, { ReactNode } from 'react'
+import React, { ReactNode, useEffect, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { X } from 'lucide-react'
 
 interface ModalProps {
@@ -18,12 +19,26 @@ export default function Modal({ title, children, onClose, footer, size = 'md' }:
     '2xl': 'max-w-6xl'
   }[size]
 
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${sizeClass} w-full`}>
+  // Close on Escape key
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const modal = (
+    <div
+      className="modal-overlay"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        className={`modal ${sizeClass} w-full`}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h3 className="text-base font-semibold text-slate-100">{title}</h3>
-          <button onClick={onClose} className="btn-icon">
+          <button onMouseDown={e => e.stopPropagation()} onClick={onClose} className="btn-icon">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -32,4 +47,7 @@ export default function Modal({ title, children, onClose, footer, size = 'md' }:
       </div>
     </div>
   )
+
+  // Render into document.body via portal to avoid stacking context issues
+  return ReactDOM.createPortal(modal, document.body)
 }

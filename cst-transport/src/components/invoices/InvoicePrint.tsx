@@ -231,7 +231,7 @@ export default function InvoicePrint({ invoice, settings, onClose }: Props) {
                       <td style={{ textAlign: 'left', border: '1px solid #ccc', padding: '4px 5px', fontWeight: 600 }}>{item.description}</td>
                       <td style={{ textAlign: 'center', border: '1px solid #ccc', padding: '4px 2px' }}>{item.vehicle_type || '—'}</td>
                       <td style={{ textAlign: 'center', border: '1px solid #ccc', padding: '4px 2px' }}>{item.duration || '—'}</td>
-                      <td style={{ textAlign: 'center', border: '1px solid #ccc', padding: '4px 2px' }}>Trip</td>
+                      <td style={{ textAlign: 'center', border: '1px solid #ccc', padding: '4px 2px' }}>{item.unit || '—'}</td>
                       <td style={{ textAlign: 'center', border: '1px solid #ccc', padding: '4px 2px' }}>{item.quantity}</td>
                       <td style={{ textAlign: 'right', border: '1px solid #ccc', padding: '4px 4px' }}>{(item.unit_price||0).toFixed(2)}</td>
                       <td style={{ textAlign: 'right', border: '1px solid #ccc', padding: '4px 4px' }}>{(item.line_total||0).toFixed(2)}</td>

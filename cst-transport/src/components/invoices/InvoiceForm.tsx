@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, Building2 } from 'lucide-react'
 import Modal from '../shared/Modal'
 import type { Invoice, Client, InvoiceItem, Company } from '../../types'
@@ -13,13 +13,14 @@ interface Props {
 }
 
 const emptyItem = (): Partial<InvoiceItem> => ({
-  description: '', vehicle_type: '', duration: '', quantity: 1, unit_price: 0, line_total: 0
+  description: '', vehicle_type: '', unit: '', duration: '', quantity: 1, unit_price: 0, line_total: 0
 })
 
 export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Props) {
   const { user } = useAuth()
   const { settings } = useApp()
   const taxRate = parseFloat(settings.tax_rate || '5')
+  const firstFieldRef = useRef<HTMLSelectElement>(null)
 
   const [companies, setCompanies] = useState<Company[]>([])
   const [form, setForm] = useState({
@@ -32,7 +33,6 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
     invoice_date:  invoice?.invoice_date  || new Date().toISOString().split('T')[0],
     due_date:      invoice?.due_date      || '',
     service_period:invoice?.service_period|| '',
-    po_number:     invoice?.po_number     || '',
     delivery_note: invoice?.delivery_note || '',
     sales_man:     invoice?.sales_man     || '',
     lpo_number:    invoice?.lpo_number    || '',
@@ -49,18 +49,27 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    window.api.listCompanies().then(c => setCompanies(c as Company[]))
+    window.api.listCompanies().then(c => {
+      const list = c as Company[]
+      setCompanies(list)
+      // Auto-select default company for new invoices
+      if (!invoice && !form.company_id) {
+        const def = list.find(co => co.is_default)
+        if (def) setForm(p => ({ ...p, company_id: def.id }))
+      }
+    })
   }, [])
 
+  // Auto-fill client fields when a client is selected from the dropdown
   useEffect(() => {
     if (form.client_id) {
       const c = clients.find(c => c.id === form.client_id)
       if (c) setForm(p => ({
         ...p,
-        client_name: c.company_name,
-        client_address: c.address || '',
-        client_trn: c.tax_number || '',
-        customer_code: c.customer_code || ''
+        client_name:   c.company_name,
+        client_address:c.address      || '',
+        client_trn:    c.tax_number   || '',
+        customer_code: c.customer_code|| ''
       }))
     }
   }, [form.client_id])
@@ -70,17 +79,19 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
       if (idx !== i) return item
       const updated = { ...item, [key]: val }
       if (key === 'quantity' || key === 'unit_price') {
-        updated.line_total = (parseFloat(String(updated.quantity) || '0')) * (parseFloat(String(updated.unit_price) || '0'))
+        const qty = parseFloat(String(key === 'quantity' ? val : updated.quantity)) || 0
+        const price = parseFloat(String(key === 'unit_price' ? val : updated.unit_price)) || 0
+        updated.line_total = Math.round(qty * price * 100) / 100
       }
       return updated
     }))
   }
 
-  const subtotal = items.reduce((s, i) => s + (i.line_total || 0), 0)
-  const discountAmt = form.discount || 0
-  const taxableAmount = Math.max(0, subtotal - discountAmt)
-  const tax_amount = Math.round(taxableAmount * (form.tax_rate / 100) * 100) / 100
-  const total = taxableAmount + tax_amount
+  const subtotal     = items.reduce((s, i) => s + (i.line_total || 0), 0)
+  const discountAmt  = form.discount || 0
+  const taxableAmt   = Math.max(0, subtotal - discountAmt)
+  const tax_amount   = Math.round(taxableAmt * (form.tax_rate / 100) * 100) / 100
+  const total        = taxableAmt + tax_amount
 
   const handleSave = async () => {
     if (saving) return
@@ -95,10 +106,10 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
         tax_amount,
         total,
         amount_paid: invoice?.amount_paid || 0,
-        balance_due: total - (invoice?.amount_paid || 0),
-        items: validItems,
-        created_by: user?.id,
-        updated_by: user?.id
+        balance_due: Math.max(0, total - (invoice?.amount_paid || 0)),
+        items:       validItems,
+        created_by:  user?.id,
+        updated_by:  user?.id
       }
       if (invoice) {
         await window.api.updateInvoice({ id: invoice.id, ...payload })
@@ -113,8 +124,14 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
     }
   }
 
-  const curr = settings.currency || 'AED'
+  const curr            = settings.currency || 'AED'
   const selectedCompany = companies.find(c => c.id === form.company_id)
+
+  const sf = <K extends keyof typeof form>(key: K) => ({
+    value: String(form[key] ?? ''),
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm(p => ({ ...p, [key]: e.target.value }))
+  })
 
   return (
     <Modal
@@ -123,144 +140,198 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
       size="2xl"
       footer={
         <>
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="btn-primary">
-            {saving ? 'Saving...' : invoice ? 'Update Invoice' : 'Create Invoice'}
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="button" onClick={handleSave} disabled={saving} className="btn-primary">
+            {saving ? 'Saving…' : invoice ? 'Update Invoice' : 'Create Invoice'}
           </button>
         </>
       }
     >
       <div className="space-y-5">
-        {/* Company & Client */}
+
+        {/* ── Company & Status ─────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-4">
           <div className="form-group">
-            <label className="label flex items-center gap-1.5"><Building2 className="w-3 h-3" /> Invoice From (Company) *</label>
-            <select className="select" value={form.company_id} onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))}>
-              <option value="">-- Use Default Company Settings --</option>
+            <label className="label flex items-center gap-1.5">
+              <Building2 className="w-3 h-3" /> Invoice From (Company)
+            </label>
+            <select
+              ref={firstFieldRef}
+              className="select"
+              value={form.company_id}
+              onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))}
+            >
+              <option value="">— Use Global Settings —</option>
               {companies.map(c => (
-                <option key={c.id} value={c.id}>{c.name}{c.is_default ? ' (Default)' : ''}</option>
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.is_default ? ' (Default)' : ''}
+                </option>
               ))}
             </select>
             {selectedCompany && (
-              <p className="text-xs text-slate-500 mt-1">TRN: {selectedCompany.trn} | Bank: {selectedCompany.bank_account}</p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                TRN: {selectedCompany.trn || '—'} | Next #: {selectedCompany.invoice_prefix}{(selectedCompany.invoice_counter || 0) + 1}
+              </p>
             )}
           </div>
           <div className="form-group">
             <label className="label">Status</label>
-            <select className="select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as any }))}>
+            <select className="select" {...sf('status')}>
               {['draft','sent','paid','partial','overdue','cancelled'].map(s => (
-                <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>
+                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Client Selection */}
+        {/* ── Bill To ──────────────────────────────────────────────────── */}
         <div className="p-3 bg-slate-900 rounded-xl space-y-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bill To (Client)</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="form-group">
               <label className="label">Select Client</label>
               <select className="select" value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}>
-                <option value="">-- Select or type below --</option>
+                <option value="">— Select or type name below —</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="label">Customer Code</label>
-              <input className="input" value={form.customer_code} onChange={e => setForm(p => ({ ...p, customer_code: e.target.value }))} placeholder="e.g. C29" />
+              <input className="input" placeholder="e.g. C29" {...sf('customer_code')} />
             </div>
           </div>
           <div className="form-group">
             <label className="label">Company / Client Name *</label>
-            <input className="input" value={form.client_name} onChange={e => setForm(p => ({ ...p, client_name: e.target.value }))} placeholder="Client company name" />
+            <input className="input" placeholder="Client company name" {...sf('client_name')} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="form-group">
               <label className="label">Client Address</label>
-              <input className="input" value={form.client_address} onChange={e => setForm(p => ({ ...p, client_address: e.target.value }))} />
+              <input className="input" {...sf('client_address')} />
             </div>
             <div className="form-group">
               <label className="label">Client TRN</label>
-              <input className="input font-mono" value={form.client_trn} onChange={e => setForm(p => ({ ...p, client_trn: e.target.value }))} placeholder="TRN # ..." />
+              <input className="input font-mono" placeholder="TRN # …" {...sf('client_trn')} />
             </div>
           </div>
         </div>
 
-        {/* Invoice Details */}
+        {/* ── Invoice Details ───────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4">
           <div className="form-group">
             <label className="label">Invoice Date *</label>
-            <input className="input" type="date" value={form.invoice_date} onChange={e => setForm(p => ({ ...p, invoice_date: e.target.value }))} />
+            <input className="input" type="date" {...sf('invoice_date')} />
           </div>
           <div className="form-group">
             <label className="label">Due Date</label>
-            <input className="input" type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} />
+            <input className="input" type="date" {...sf('due_date')} />
           </div>
           <div className="form-group">
             <label className="label">Service Period</label>
-            <input className="input" placeholder="e.g. January 2026" value={form.service_period} onChange={e => setForm(p => ({ ...p, service_period: e.target.value }))} />
-          </div>
-          <div className="form-group">
-            <label className="label">PO Number</label>
-            <input className="input" placeholder="e.g. JEPCC-LPO-2025-0" value={form.po_number} onChange={e => setForm(p => ({ ...p, po_number: e.target.value }))} />
+            <input className="input" placeholder="e.g. January 2026" {...sf('service_period')} />
           </div>
           <div className="form-group">
             <label className="label">LPO Number</label>
-            <input className="input" placeholder="LPO #" value={form.lpo_number} onChange={e => setForm(p => ({ ...p, lpo_number: e.target.value }))} />
+            <input className="input" placeholder="LPO #" {...sf('lpo_number')} />
           </div>
           <div className="form-group">
             <label className="label">Delivery Note No</label>
-            <input className="input" placeholder="e.g. DN-2026-001" value={form.delivery_note} onChange={e => setForm(p => ({ ...p, delivery_note: e.target.value }))} />
+            <input className="input" placeholder="e.g. DN-2026-001" {...sf('delivery_note')} />
           </div>
           <div className="form-group">
             <label className="label">Sales Man</label>
-            <input className="input" value={form.sales_man} onChange={e => setForm(p => ({ ...p, sales_man: e.target.value }))} />
+            <input className="input" {...sf('sales_man')} />
           </div>
         </div>
 
-        {/* Line Items */}
+        {/* ── Line Items ───────────────────────────────────────────────── */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="label !mb-0">Line Items</label>
-            <button onClick={() => setItems(p => [...p, emptyItem()])} className="btn-ghost text-xs">
+            <button
+              type="button"
+              onClick={() => setItems(p => [...p, emptyItem()])}
+              className="btn-ghost text-xs"
+            >
               <Plus className="w-3.5 h-3.5" /> Add Line
             </button>
           </div>
           <div className="rounded-xl border border-slate-700 overflow-x-auto">
-            <table className="table min-w-[700px]">
+            <table className="table" style={{ minWidth: '820px' }}>
               <thead>
                 <tr>
-                  <th className="w-2/5">Description</th>
-                  <th>Vehicle Type</th>
-                  <th>Duration</th>
-                  <th>Qty</th>
-                  <th>Unit Price ({curr})</th>
-                  <th>Total</th>
-                  <th></th>
+                  <th style={{ width: '28%' }}>Description *</th>
+                  <th style={{ width: '13%' }}>Vehicle Type</th>
+                  <th style={{ width: '8%'  }}>Unit</th>
+                  <th style={{ width: '10%' }}>Duration</th>
+                  <th style={{ width: '6%'  }}>Qty</th>
+                  <th style={{ width: '12%' }}>Unit Price ({curr})</th>
+                  <th style={{ width: '10%' }}>Total</th>
+                  <th style={{ width: '3%'  }}></th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item, i) => (
                   <tr key={i}>
                     <td>
-                      <input className="input text-xs py-1" value={item.description || ''} onChange={e => updateItem(i, 'description', e.target.value)} placeholder="Service description..." />
+                      <input
+                        className="input text-xs py-1"
+                        value={item.description || ''}
+                        onChange={e => updateItem(i, 'description', e.target.value)}
+                        placeholder="Service description…"
+                      />
                     </td>
                     <td>
-                      <input className="input text-xs py-1 w-28" value={item.vehicle_type || ''} onChange={e => updateItem(i, 'vehicle_type', e.target.value)} placeholder="60 Seat Bus" />
+                      <input
+                        className="input text-xs py-1"
+                        value={item.vehicle_type || ''}
+                        onChange={e => updateItem(i, 'vehicle_type', e.target.value)}
+                        placeholder="e.g. 60-Seat Bus"
+                      />
                     </td>
                     <td>
-                      <input className="input text-xs py-1 w-24" value={item.duration || ''} onChange={e => updateItem(i, 'duration', e.target.value)} placeholder="1-31 Jan" />
+                      <input
+                        className="input text-xs py-1"
+                        value={item.unit || ''}
+                        onChange={e => updateItem(i, 'unit', e.target.value)}
+                        placeholder="Trip"
+                        title="e.g. Trip, Day, Hour, Month, PCS"
+                      />
                     </td>
                     <td>
-                      <input className="input text-xs py-1 w-16" type="number" value={item.quantity || 1} onChange={e => updateItem(i, 'quantity', parseFloat(e.target.value) || 0)} />
+                      <input
+                        className="input text-xs py-1"
+                        value={item.duration || ''}
+                        onChange={e => updateItem(i, 'duration', e.target.value)}
+                        placeholder="1-31 Jan"
+                      />
                     </td>
                     <td>
-                      <input className="input text-xs py-1 w-28" type="number" step="0.01" value={item.unit_price || 0} onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)} />
+                      <input
+                        className="input text-xs py-1"
+                        type="number" min="0" step="1"
+                        value={item.quantity ?? 1}
+                        onChange={e => updateItem(i, 'quantity', parseFloat(e.target.value) || 0)}
+                      />
                     </td>
-                    <td className="font-semibold text-right text-sm">{(item.line_total || 0).toFixed(2)}</td>
                     <td>
-                      <button onClick={() => setItems(p => p.filter((_, j) => j !== i))} className="btn-icon text-red-400">
+                      <input
+                        className="input text-xs py-1"
+                        type="number" min="0" step="0.01"
+                        value={item.unit_price ?? 0}
+                        onChange={e => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)}
+                      />
+                    </td>
+                    <td className="font-semibold text-right text-sm pr-3">
+                      {(item.line_total || 0).toFixed(2)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setItems(p => p.filter((_, j) => j !== i))}
+                        className="btn-icon text-red-400"
+                        title="Remove line"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -271,22 +342,23 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
           </div>
         </div>
 
-        {/* Totals & Notes */}
+        {/* ── Totals & Notes ───────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-3">
             <div className="form-group">
               <label className="label">Notes / Payment Instructions</label>
-              <textarea className="input resize-none" rows={3} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+              <textarea className="input resize-none" rows={3} {...sf('notes')} />
             </div>
             <div className="form-group">
-              <label className="label">Terms & Conditions</label>
-              <textarea className="input resize-none" rows={2} value={form.terms} onChange={e => setForm(p => ({ ...p, terms: e.target.value }))} />
+              <label className="label">Terms &amp; Conditions</label>
+              <textarea className="input resize-none" rows={2} {...sf('terms')} />
             </div>
           </div>
+
           <div className="bg-slate-900 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-slate-500">Subtotal:</span>
-              <span>{curr} {subtotal.toFixed(2)}</span>
+              <span className="font-medium">{curr} {subtotal.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-slate-500">Discount ({curr}):</span>
@@ -300,7 +372,7 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
             {discountAmt > 0 && (
               <div className="flex justify-between text-xs">
                 <span className="text-slate-500">Taxable Amount:</span>
-                <span>{curr} {taxableAmount.toFixed(2)}</span>
+                <span>{curr} {taxableAmt.toFixed(2)}</span>
               </div>
             )}
             <div className="flex items-center justify-between gap-2">
@@ -317,11 +389,18 @@ export default function InvoiceForm({ invoice, clients, onClose, onSaved }: Prop
               <span>{curr} {tax_amount.toFixed(2)}</span>
             </div>
             <div className="border-t border-slate-700 pt-2 flex justify-between font-black text-base">
-              <span className="text-slate-200">Total:</span>
+              <span className="text-slate-200">Total Due:</span>
               <span className="text-blue-400">{curr} {total.toFixed(2)}</span>
             </div>
+            {(invoice?.amount_paid || 0) > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Amount Paid:</span>
+                <span className="text-emerald-400">{curr} {(invoice!.amount_paid).toFixed(2)}</span>
+              </div>
+            )}
           </div>
         </div>
+
       </div>
     </Modal>
   )

@@ -390,8 +390,12 @@ const MIGRATIONS = [
   `ALTER TABLE invoice_items ADD COLUMN duration TEXT`,
   `ALTER TABLE invoice_items ADD COLUMN sort_order INTEGER DEFAULT 0`,
   `ALTER TABLE invoice_items ADD COLUMN trip_id TEXT`,
+  `ALTER TABLE invoice_items ADD COLUMN unit TEXT DEFAULT ''`,
   // service_period on invoices
   `ALTER TABLE invoices ADD COLUMN service_period TEXT`,
+  // per-company invoice numbering
+  `ALTER TABLE companies ADD COLUMN invoice_prefix TEXT DEFAULT 'INV-'`,
+  `ALTER TABLE companies ADD COLUMN invoice_counter INTEGER DEFAULT 0`,
 ]
 
 export function getDatabase(): Database.Database {

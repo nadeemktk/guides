@@ -132,7 +132,9 @@
   }
 
   .modal-overlay {
-    @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+    @apply fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4;
+    /* backdrop-blur intentionally removed — causes Electron GPU compositing issues
+       that make form inputs intermittently non-interactive */
   }
 
   .modal {
