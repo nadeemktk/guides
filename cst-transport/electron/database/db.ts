@@ -287,6 +287,16 @@ CREATE TABLE IF NOT EXISTS reminder_config (
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS driver_employment_history (
+  id           TEXT PRIMARY KEY,
+  driver_id    TEXT NOT NULL REFERENCES drivers(id),
+  joining_date TEXT NOT NULL,
+  leaving_date TEXT,
+  status       TEXT NOT NULL DEFAULT 'active',
+  notes        TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS chat_history (
   id              TEXT PRIMARY KEY,
   user_id         TEXT REFERENCES users(id),
@@ -396,6 +406,26 @@ const MIGRATIONS = [
   // per-company invoice numbering
   `ALTER TABLE companies ADD COLUMN invoice_prefix TEXT DEFAULT 'INV-'`,
   `ALTER TABLE companies ADD COLUMN invoice_counter INTEGER DEFAULT 0`,
+  // driver / staff leaving date
+  `ALTER TABLE drivers ADD COLUMN leaving_date TEXT`,
+  `ALTER TABLE staff ADD COLUMN designation TEXT`,
+  `ALTER TABLE staff ADD COLUMN department TEXT`,
+  `ALTER TABLE staff ADD COLUMN leaving_date TEXT`,
+  // expanded payroll allowances
+  `ALTER TABLE driver_salaries ADD COLUMN food_allowance REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN accommodation REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN transport_allowance REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN trip_incentives REAL DEFAULT 0`,
+  // expanded payroll deductions
+  `ALTER TABLE driver_salaries ADD COLUMN advance_salary REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN absence_deduction REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN traffic_fines REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN penalties REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN loan_deduction REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN other_deductions REAL DEFAULT 0`,
+  `ALTER TABLE driver_salaries ADD COLUMN other_deduction_reason TEXT`,
+  // payroll workflow status (separate from payment status)
+  `ALTER TABLE driver_salaries ADD COLUMN payroll_status TEXT DEFAULT 'draft'`,
 ]
 
 export function getDatabase(): Database.Database {

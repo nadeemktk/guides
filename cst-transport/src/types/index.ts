@@ -91,7 +91,18 @@ export interface Driver {
   id_expiry: string | null
   base_salary: number
   joining_date: string | null
+  leaving_date: string | null
   status: 'active' | 'inactive' | 'on_leave'
+  notes: string
+  created_at: string
+}
+
+export interface DriverEmploymentHistory {
+  id: string
+  driver_id: string
+  joining_date: string
+  leaving_date: string | null
+  status: 'active' | 'resigned' | 'terminated' | 'on_leave' | 'rejoined'
   notes: string
   created_at: string
 }
@@ -101,8 +112,11 @@ export interface Staff {
   full_name: string
   mobile: string
   role: string
+  designation: string
+  department: string
   base_salary: number
   joining_date: string | null
+  leaving_date: string | null
   id_number: string
   id_expiry: string | null
   nationality: string
@@ -244,12 +258,26 @@ export interface DriverSalary {
   period_month: number
   period_year: number
   base_salary: number
+  // allowances
   overtime_hours: number
   overtime_rate: number
   overtime_amount: number
+  food_allowance: number
+  accommodation: number
+  transport_allowance: number
+  trip_incentives: number
+  bonus: number
+  // deductions
   deductions: number
   deduction_reason: string
-  bonus: number
+  advance_salary: number
+  absence_deduction: number
+  traffic_fines: number
+  penalties: number
+  loan_deduction: number
+  other_deductions: number
+  other_deduction_reason: string
+  // totals
   gross_salary: number
   amount_paid: number
   remaining: number
@@ -257,6 +285,7 @@ export interface DriverSalary {
   payment_method: string
   notes: string
   status: 'pending' | 'paid' | 'partial'
+  payroll_status: 'draft' | 'processed' | 'paid' | 'cancelled'
   created_at: string
 }
 

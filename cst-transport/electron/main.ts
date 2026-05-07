@@ -336,7 +336,37 @@ ipcMain.handle('drivers:update', async (_, { id, ...data }) => {
   return { success: true }
 })
 ipcMain.handle('drivers:delete', async (_, id) => {
-  run('DELETE FROM drivers WHERE id=?', [id])
+  return transaction(() => {
+    run('UPDATE trips SET driver_id=NULL WHERE driver_id=?', [id])
+    run('DELETE FROM driver_assignments WHERE driver_id=?', [id])
+    run('DELETE FROM driver_employment_history WHERE driver_id=?', [id])
+    run('DELETE FROM driver_salaries WHERE driver_id=? AND employee_type=\'driver\'', [id])
+    run('DELETE FROM drivers WHERE id=?', [id])
+    return { success: true }
+  })
+})
+
+// DRIVER EMPLOYMENT HISTORY
+ipcMain.handle('driver_employment:list', async (_, driver_id) => {
+  return all('SELECT * FROM driver_employment_history WHERE driver_id=? ORDER BY joining_date DESC', [driver_id])
+})
+ipcMain.handle('driver_employment:create', async (_, data) => {
+  const id = uuidv4()
+  run(`INSERT INTO driver_employment_history(id,driver_id,joining_date,leaving_date,status,notes) VALUES(?,?,?,?,?,?)`,
+    [id, data.driver_id, data.joining_date, data.leaving_date||null, data.status||'active', data.notes||''])
+  // Sync driver status
+  const statusMap: Record<string,string> = { active:'active', rejoined:'active', on_leave:'on_leave', resigned:'inactive', terminated:'inactive' }
+  const mapped = statusMap[data.status] || 'active'
+  run('UPDATE drivers SET status=? WHERE id=?', [mapped, data.driver_id])
+  return { success: true, id }
+})
+ipcMain.handle('driver_employment:update', async (_, { id, ...data }) => {
+  run(`UPDATE driver_employment_history SET joining_date=?,leaving_date=?,status=?,notes=? WHERE id=?`,
+    [data.joining_date, data.leaving_date||null, data.status||'active', data.notes||'', id])
+  return { success: true }
+})
+ipcMain.handle('driver_employment:delete', async (_, id) => {
+  run('DELETE FROM driver_employment_history WHERE id=?', [id])
   return { success: true }
 })
 
@@ -606,16 +636,18 @@ ipcMain.handle('soa:balance', async (_, clientId) => {
 ipcMain.handle('staff:list', async () => all('SELECT * FROM staff ORDER BY full_name'))
 ipcMain.handle('staff:create', async (_, data) => {
   const id = uuidv4()
-  run(`INSERT INTO staff(id,full_name,mobile,role,base_salary,joining_date,id_number,id_expiry,nationality,status,notes)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, data.full_name, data.mobile||'', data.role||'staff', data.base_salary||0,
-     data.joining_date||null, data.id_number||'', data.id_expiry||null, data.nationality||'', data.status||'active', data.notes||''])
+  run(`INSERT INTO staff(id,full_name,mobile,role,designation,department,base_salary,joining_date,leaving_date,id_number,id_expiry,nationality,status,notes)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, data.full_name, data.mobile||'', data.role||'staff', data.designation||'', data.department||'',
+     data.base_salary||0, data.joining_date||null, data.leaving_date||null,
+     data.id_number||'', data.id_expiry||null, data.nationality||'', data.status||'active', data.notes||''])
   return { success: true, id }
 })
 ipcMain.handle('staff:update', async (_, { id, ...data }) => {
-  run(`UPDATE staff SET full_name=?,mobile=?,role=?,base_salary=?,joining_date=?,id_number=?,id_expiry=?,nationality=?,status=?,notes=?,updated_at=datetime('now') WHERE id=?`,
-    [data.full_name, data.mobile||'', data.role||'staff', data.base_salary||0,
-     data.joining_date||null, data.id_number||'', data.id_expiry||null, data.nationality||'', data.status||'active', data.notes||'', id])
+  run(`UPDATE staff SET full_name=?,mobile=?,role=?,designation=?,department=?,base_salary=?,joining_date=?,leaving_date=?,id_number=?,id_expiry=?,nationality=?,status=?,notes=?,updated_at=datetime('now') WHERE id=?`,
+    [data.full_name, data.mobile||'', data.role||'staff', data.designation||'', data.department||'',
+     data.base_salary||0, data.joining_date||null, data.leaving_date||null,
+     data.id_number||'', data.id_expiry||null, data.nationality||'', data.status||'active', data.notes||'', id])
   return { success: true }
 })
 ipcMain.handle('staff:delete', async (_, id) => {
@@ -704,9 +736,14 @@ ipcMain.handle('salaries:get', async (_, { driver_id, month, year }) => {
 })
 ipcMain.handle('salaries:save', async (_, data) => {
   const isStaff = data.employee_type === 'staff'
-  const gross = (data.base_salary||0) + (data.overtime_amount||0) + (data.bonus||0) - (data.deductions||0)
+  const totalAllowances = (data.food_allowance||0) + (data.accommodation||0) + (data.transport_allowance||0) +
+    (data.trip_incentives||0) + (data.overtime_amount||0) + (data.bonus||0)
+  const totalDeductions = (data.deductions||0) + (data.advance_salary||0) + (data.absence_deduction||0) +
+    (data.traffic_fines||0) + (data.penalties||0) + (data.loan_deduction||0) + (data.other_deductions||0)
+  const gross = (data.base_salary||0) + totalAllowances - totalDeductions
   const remaining = gross - (data.amount_paid||0)
   const status = remaining <= 0 ? 'paid' : data.amount_paid > 0 ? 'partial' : 'pending'
+  const payroll_status = data.payroll_status || 'draft'
   const existing = isStaff
     ? get(`SELECT id FROM driver_salaries WHERE staff_id=? AND period_month=? AND period_year=? AND employee_type='staff'`,
         [data.staff_id, data.period_month, data.period_year])
@@ -716,21 +753,33 @@ ipcMain.handle('salaries:save', async (_, data) => {
     const whereCol = isStaff ? 'staff_id' : 'driver_id'
     const whereVal = isStaff ? data.staff_id : data.driver_id
     run(`UPDATE driver_salaries SET base_salary=?,overtime_hours=?,overtime_rate=?,overtime_amount=?,
-         deductions=?,deduction_reason=?,bonus=?,gross_salary=?,amount_paid=?,remaining=?,
-         payment_date=?,payment_method=?,notes=?,status=?,updated_at=datetime('now')
+         food_allowance=?,accommodation=?,transport_allowance=?,trip_incentives=?,
+         deductions=?,deduction_reason=?,advance_salary=?,absence_deduction=?,traffic_fines=?,
+         penalties=?,loan_deduction=?,other_deductions=?,other_deduction_reason=?,
+         bonus=?,gross_salary=?,amount_paid=?,remaining=?,
+         payment_date=?,payment_method=?,notes=?,status=?,payroll_status=?,updated_at=datetime('now')
          WHERE ${whereCol}=? AND period_month=? AND period_year=?`,
       [data.base_salary||0, data.overtime_hours||0, data.overtime_rate||0, data.overtime_amount||0,
-       data.deductions||0, data.deduction_reason||'', data.bonus||0, gross, data.amount_paid||0, remaining,
-       data.payment_date||null, data.payment_method||'cash', data.notes||'', status,
+       data.food_allowance||0, data.accommodation||0, data.transport_allowance||0, data.trip_incentives||0,
+       data.deductions||0, data.deduction_reason||'', data.advance_salary||0, data.absence_deduction||0,
+       data.traffic_fines||0, data.penalties||0, data.loan_deduction||0, data.other_deductions||0, data.other_deduction_reason||'',
+       data.bonus||0, gross, data.amount_paid||0, remaining,
+       data.payment_date||null, data.payment_method||'cash', data.notes||'', status, payroll_status,
        whereVal, data.period_month, data.period_year])
   } else {
-    run(`INSERT INTO driver_salaries(id,driver_id,staff_id,employee_type,period_month,period_year,base_salary,overtime_hours,overtime_rate,overtime_amount,deductions,deduction_reason,bonus,gross_salary,amount_paid,remaining,payment_date,payment_method,notes,status,created_by)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    run(`INSERT INTO driver_salaries(id,driver_id,staff_id,employee_type,period_month,period_year,
+         base_salary,overtime_hours,overtime_rate,overtime_amount,food_allowance,accommodation,transport_allowance,trip_incentives,
+         deductions,deduction_reason,advance_salary,absence_deduction,traffic_fines,penalties,loan_deduction,other_deductions,other_deduction_reason,
+         bonus,gross_salary,amount_paid,remaining,payment_date,payment_method,notes,status,payroll_status,created_by)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [uuidv4(), data.driver_id||null, data.staff_id||null, data.employee_type||'driver',
        data.period_month, data.period_year, data.base_salary||0,
        data.overtime_hours||0, data.overtime_rate||0, data.overtime_amount||0,
-       data.deductions||0, data.deduction_reason||'', data.bonus||0, gross, data.amount_paid||0, remaining,
-       data.payment_date||null, data.payment_method||'cash', data.notes||'', status, data.created_by||null])
+       data.food_allowance||0, data.accommodation||0, data.transport_allowance||0, data.trip_incentives||0,
+       data.deductions||0, data.deduction_reason||'', data.advance_salary||0, data.absence_deduction||0,
+       data.traffic_fines||0, data.penalties||0, data.loan_deduction||0, data.other_deductions||0, data.other_deduction_reason||'',
+       data.bonus||0, gross, data.amount_paid||0, remaining,
+       data.payment_date||null, data.payment_method||'cash', data.notes||'', status, payroll_status, data.created_by||null])
   }
   return { success: true }
 })

@@ -63,6 +63,11 @@ const api = {
   updateExpense:       (data: any) => ipcRenderer.invoke('expenses:update', data),
   deleteExpense:       (id: string) => ipcRenderer.invoke('expenses:delete', id),
   getVehicleProfit:    (data: any) => ipcRenderer.invoke('expenses:profit', data),
+  // Employment History
+  listEmploymentHistory:   (driverId: string) => ipcRenderer.invoke('driver_employment:list', driverId),
+  createEmploymentRecord:  (data: any) => ipcRenderer.invoke('driver_employment:create', data),
+  updateEmploymentRecord:  (data: any) => ipcRenderer.invoke('driver_employment:update', data),
+  deleteEmploymentRecord:  (id: string) => ipcRenderer.invoke('driver_employment:delete', id),
   // Assignments
   listAssignments:     (driverId: string) => ipcRenderer.invoke('assignments:list', driverId),
   createAssignment:    (data: any) => ipcRenderer.invoke('assignments:create', data),
