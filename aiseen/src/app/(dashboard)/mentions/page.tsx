@@ -1,8 +1,22 @@
-import { MessageSquare } from "lucide-react";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth/actions";
+import { createServiceClient } from "@/lib/supabase/server";
+import { MentionsClient } from "@/components/dashboard/mentions/MentionsClient";
 
 export const metadata = { title: "Mentions – AISeen" };
 
-export default function MentionsPage() {
+export default async function MentionsPage() {
+  const user = await getUser();
+  if (!user) redirect("/login");
+
+  const supabase = createServiceClient();
+  const { data: stores } = await (supabase as any)
+    .from("stores")
+    .select("id, brand_name, store_url, platform")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -11,14 +25,7 @@ export default function MentionsPage() {
           Every time an AI cited your brand in a response.
         </p>
       </div>
-
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card py-20 text-center">
-        <MessageSquare className="h-10 w-10 text-muted-foreground/40 mb-4" />
-        <p className="font-medium text-muted-foreground">No mentions detected yet</p>
-        <p className="text-sm text-muted-foreground/70 mt-1">
-          Mentions across ChatGPT, Gemini, and Perplexity will appear here.
-        </p>
-      </div>
+      <MentionsClient stores={stores ?? []} />
     </div>
   );
 }

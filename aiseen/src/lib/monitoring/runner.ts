@@ -13,12 +13,18 @@ export interface DBQuery {
   intent: string | null;
 }
 
+export interface OwnBrandMentionData {
+  mentionId: string;
+  responseText: string;
+}
+
 export interface BatchSummary {
   queriesProcessed: number;
   runsInserted: number;
   ownMentions: number;
   competitorMentions: number;
   queryResults: QueryResult[];
+  ownBrandMentionData: OwnBrandMentionData[];
 }
 
 /**
@@ -38,6 +44,7 @@ export async function processBatch(
   let ownMentions = 0;
   let competitorMentions = 0;
   const queryResults: QueryResult[] = [];
+  const ownBrandMentionData: OwnBrandMentionData[] = [];
 
   for (const query of queries) {
     const llmResults = await runQueryAgainstProviders(query.query_text, PROVIDERS);
@@ -94,7 +101,16 @@ export async function processBatch(
         }
 
         if (mentionRows.length > 0) {
-          await db.from("mentions").insert(mentionRows);
+          const { data: inserted } = await db
+            .from("mentions")
+            .insert(mentionRows)
+            .select("id, entity_type");
+
+          for (const row of inserted ?? []) {
+            if (row.entity_type === "own_brand" && llm.responseText) {
+              ownBrandMentionData.push({ mentionId: row.id as string, responseText: llm.responseText });
+            }
+          }
         }
       }
 
@@ -120,7 +136,7 @@ export async function processBatch(
     });
   }
 
-  return { queriesProcessed: queries.length, runsInserted, ownMentions, competitorMentions, queryResults };
+  return { queriesProcessed: queries.length, runsInserted, ownMentions, competitorMentions, queryResults, ownBrandMentionData };
 }
 
 /**
