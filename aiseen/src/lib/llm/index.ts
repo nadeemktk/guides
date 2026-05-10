@@ -77,6 +77,35 @@ Sample products (up to 50): {product_sample}
 
 Return as a JSON array. Generate exactly {count} queries.`;
 
+export const RECOMMENDATIONS_PROMPT = `You are an AI search visibility expert. Analyze these monitoring results and generate 5-8 specific, actionable recommendations to improve how often AI assistants (ChatGPT, Gemini, Perplexity) recommend {brand_name}.
+
+CURRENT PERFORMANCE:
+- Visibility Score: {score}/100 (industry average: ~35)
+- Brand mentioned in {mention_rate}% of monitored queries
+
+QUERIES WHERE THE BRAND WAS NOT MENTIONED (recent):
+{losing_queries}
+
+COMPETITORS BEING RECOMMENDED INSTEAD:
+{competitors}
+
+PRODUCT CATALOG SAMPLE:
+{products}
+
+ATTRIBUTES AI CITES WHEN BRAND IS MENTIONED:
+{winning_reasons}
+
+Generate 5-8 recommendations. For each return:
+- rec_type: one of [description_rewrite, schema_markup, content_topic, review_site, feature_gap]
+- title: specific action title (max 12 words)
+- rationale: why this helps AI discover the brand (2-3 sentences, specific to the data above)
+- current_value: what the brand currently lacks or has (brief, based on the data — omit if not applicable)
+- suggested_value: exactly what to add or change
+- expected_impact: expected improvement description (e.g. "Could lift mention rate by 10-15%")
+
+Return strict JSON array only. No markdown fences. No explanation outside the JSON.
+[{"rec_type":..., "title":..., "rationale":..., "current_value":..., "suggested_value":..., "expected_impact":...}]`;
+
 export const MENTION_EXTRACTION_PROMPT = `You are analyzing an AI shopping assistant's response to extract structured data.
 
 Brand we're tracking: {brand_name} (also known as: {brand_aliases})

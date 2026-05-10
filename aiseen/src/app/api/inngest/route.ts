@@ -5,6 +5,7 @@ import { syncCatalogFunction } from "@/lib/inngest/functions/syncCatalog";
 import { generateQueriesFunction } from "@/lib/inngest/functions/generateQueries";
 import { runMonitoringFunction } from "@/lib/inngest/functions/runMonitoring";
 import { scheduleMonitoringFunction } from "@/lib/inngest/functions/scheduleMonitoring";
+import { generateRecommendationsFunction } from "@/lib/inngest/functions/generateRecommendations";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -14,5 +15,6 @@ export const { GET, POST, PUT } = serve({
     generateQueriesFunction,
     runMonitoringFunction,
     scheduleMonitoringFunction,
+    generateRecommendationsFunction,
   ],
 });

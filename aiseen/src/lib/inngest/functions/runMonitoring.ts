@@ -124,6 +124,12 @@ export const runMonitoringFunction = inngest.createFunction(
       return finalizeMonitoringRun(storeId, allQueryResults);
     });
 
+    // Kick off recommendation generation as a separate Inngest function
+    await step.sendEvent("trigger-recommendations", {
+      name: "recommendations/generate.requested" as const,
+      data: { storeId },
+    });
+
     return {
       storeId,
       queriesRun: queries.length,

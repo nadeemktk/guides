@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConnectShopify } from "./ConnectShopify";
 import { ConnectAmazon } from "./ConnectAmazon";
 import { ConnectWooCommerce } from "./ConnectWooCommerce";
-import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database, Search, Play } from "lucide-react";
+import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database, Search, Play, Lightbulb } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface Store {
@@ -38,6 +38,7 @@ export function StoreCard({ store }: { store: Store }) {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [generatingQueries, setGeneratingQueries] = useState(false);
   const [monitoring, setMonitoring] = useState(false);
+  const [generatingRecs, setGeneratingRecs] = useState(false);
 
   async function handleTest() {
     setTesting(true);
@@ -83,6 +84,20 @@ export function StoreCard({ store }: { store: Store }) {
       setSyncMsg("Network error — try again.");
     } finally {
       setMonitoring(false);
+    }
+  }
+
+  async function handleGenerateRecs() {
+    setGeneratingRecs(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch(`/api/stores/${store.id}/recommendations/generate`, { method: "POST" });
+      const data = await res.json() as { message?: string; error?: string };
+      setSyncMsg(res.ok ? "Recommendation generation started — visit the Recommendations page shortly." : `Error: ${data.error}`);
+    } catch {
+      setSyncMsg("Network error — try again.");
+    } finally {
+      setGeneratingRecs(false);
     }
   }
 
@@ -181,6 +196,16 @@ export function StoreCard({ store }: { store: Store }) {
         >
           <Play className={`h-3.5 w-3.5 mr-1.5 ${monitoring ? "animate-pulse" : ""}`} />
           {monitoring ? "Starting…" : "Run monitoring"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleGenerateRecs}
+          disabled={generatingRecs}
+        >
+          <Lightbulb className={`h-3.5 w-3.5 mr-1.5 ${generatingRecs ? "animate-pulse" : ""}`} />
+          {generatingRecs ? "Starting…" : "Get recommendations"}
         </Button>
         <Button
           variant="ghost"

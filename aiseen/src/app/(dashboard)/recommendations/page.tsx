@@ -1,8 +1,22 @@
-import { Lightbulb } from "lucide-react";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth/actions";
+import { createServiceClient } from "@/lib/supabase/server";
+import { RecommendationsClient } from "@/components/dashboard/recommendations/RecommendationsClient";
 
 export const metadata = { title: "Recommendations – AISeen" };
 
-export default function RecommendationsPage() {
+export default async function RecommendationsPage() {
+  const user = await getUser();
+  if (!user) redirect("/login");
+
+  const supabase = createServiceClient();
+  const { data: stores } = await (supabase as any)
+    .from("stores")
+    .select("id, brand_name, store_url, platform")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
   return (
     <div className="p-8">
       <div className="mb-6">
@@ -11,14 +25,7 @@ export default function RecommendationsPage() {
           AI-generated actions to improve your visibility score.
         </p>
       </div>
-
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card py-20 text-center">
-        <Lightbulb className="h-10 w-10 text-muted-foreground/40 mb-4" />
-        <p className="font-medium text-muted-foreground">No recommendations yet</p>
-        <p className="text-sm text-muted-foreground/70 mt-1">
-          Personalized recommendations will generate after your first monitoring cycle.
-        </p>
-      </div>
+      <RecommendationsClient stores={stores ?? []} />
     </div>
   );
 }
