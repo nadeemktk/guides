@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConnectShopify } from "./ConnectShopify";
 import { ConnectAmazon } from "./ConnectAmazon";
 import { ConnectWooCommerce } from "./ConnectWooCommerce";
-import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database, Search } from "lucide-react";
+import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database, Search, Play } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface Store {
@@ -37,6 +37,7 @@ export function StoreCard({ store }: { store: Store }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [generatingQueries, setGeneratingQueries] = useState(false);
+  const [monitoring, setMonitoring] = useState(false);
 
   async function handleTest() {
     setTesting(true);
@@ -66,6 +67,22 @@ export function StoreCard({ store }: { store: Store }) {
       setSyncMsg("Network error — try again.");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleMonitor() {
+    setMonitoring(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch(`/api/stores/${store.id}/monitor`, { method: "POST" });
+      const data = await res.json() as { message?: string; error?: string; activeQueries?: number };
+      setSyncMsg(res.ok
+        ? `Monitoring started — running ${data.activeQueries} queries against ChatGPT, Gemini & Perplexity.`
+        : `Error: ${data.error}`);
+    } catch {
+      setSyncMsg("Network error — try again.");
+    } finally {
+      setMonitoring(false);
     }
   }
 
@@ -155,6 +172,16 @@ export function StoreCard({ store }: { store: Store }) {
             {syncing ? "Starting…" : "Sync catalog"}
           </Button>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={handleMonitor}
+          disabled={monitoring}
+        >
+          <Play className={`h-3.5 w-3.5 mr-1.5 ${monitoring ? "animate-pulse" : ""}`} />
+          {monitoring ? "Starting…" : "Run monitoring"}
+        </Button>
         <Button
           variant="ghost"
           size="sm"
