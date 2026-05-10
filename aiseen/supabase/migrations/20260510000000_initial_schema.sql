@@ -95,10 +95,7 @@ create table public.query_runs (
 );
 
 create index idx_query_runs_query_id on public.query_runs(query_id);
-create index idx_query_runs_store_ran on public.query_runs(
-  (select store_id from public.queries where id = query_id),
-  ran_at
-);
+create index idx_query_runs_ran_at on public.query_runs(ran_at);
 
 -- -------------------------
 -- MENTIONS
