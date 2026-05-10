@@ -1,6 +1,16 @@
 import { Resend } from "resend";
 
-export const resend = new Resend(process.env.RESEND_API_KEY);
+let _resend: Resend | null = null;
+
+function getResend(): Resend {
+  if (!_resend) {
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error("RESEND_API_KEY is not configured");
+    }
+    _resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return _resend;
+}
 
 export interface AuditReportEmailData {
   to: string;
@@ -13,7 +23,7 @@ export interface AuditReportEmailData {
 export async function sendAuditReportEmail(data: AuditReportEmailData) {
   const { to, brandName, auditId, visibilityScore, appUrl } = data;
 
-  return resend.emails.send({
+  return getResend().emails.send({
     from: "AISeen <reports@aiseen.com>",
     to,
     subject: `Your AI Visibility Report for ${brandName} is ready`,
@@ -43,8 +53,7 @@ export async function sendAuditReportEmail(data: AuditReportEmailData) {
   </a>
 
   <p style="color: #888; font-size: 12px; margin-top: 32px;">
-    AISeen — AI Search Visibility for E-commerce<br>
-    <a href="${appUrl}/unsubscribe" style="color: #888;">Unsubscribe</a>
+    AISeen — AI Search Visibility for E-commerce
   </p>
 </body>
 </html>`,
@@ -52,7 +61,7 @@ export async function sendAuditReportEmail(data: AuditReportEmailData) {
 }
 
 export async function sendWelcomeEmail(to: string, name: string) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: "AISeen <hello@aiseen.com>",
     to,
     subject: "Welcome to AISeen — let's get your store visible to AI",
