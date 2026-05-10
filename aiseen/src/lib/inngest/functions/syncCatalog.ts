@@ -80,6 +80,12 @@ export const syncCatalogFunction = inngest.createFunction(
         .eq("id", storeId);
     });
 
+    // Step 6: Fire query generation (non-blocking — runs as a separate Inngest execution)
+    await step.sendEvent("trigger-query-generation", {
+      name: "queries/generate.requested",
+      data: { storeId },
+    });
+
     return { storeId, productCount: products.length, batches: totalBatches };
   }
 );
