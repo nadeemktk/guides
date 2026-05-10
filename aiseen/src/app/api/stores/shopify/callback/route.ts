@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyShopifyHmac, exchangeShopifyCode, isValidShopDomain } from "@/lib/stores/shopify";
 import { createServiceClient } from "@/lib/supabase/server";
+import { checkStoreLimit } from "@/lib/billing/gate";
 
 export async function GET(req: NextRequest) {
   const params = Object.fromEntries(req.nextUrl.searchParams.entries());
@@ -45,6 +46,12 @@ export async function GET(req: NextRequest) {
         .update({ api_credentials: creds, is_active: true })
         .eq("id", existing.data.id);
     } else {
+      // Gate: check store limit before creating new store
+      const gate = await checkStoreLimit(userId);
+      if (!gate.allowed) {
+        return NextResponse.redirect(new URL(`/stores?error=store_limit&reason=${encodeURIComponent(gate.reason ?? "")}`, req.nextUrl.origin));
+      }
+
       await (supabase as any)
         .from("stores")
         .insert({

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { testWooCommerceConnection } from "@/lib/stores/woocommerce";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/auth/actions";
+import { checkStoreLimit } from "@/lib/billing/gate";
 
 const schema = z.object({
   store_id: z.string().uuid().optional(),
@@ -47,6 +48,12 @@ export async function POST(req: NextRequest) {
       is_active: true,
     }).eq("id", store_id);
     return NextResponse.json({ ok: true });
+  }
+
+  // Gate: check store limit before creating new store
+  const gate = await checkStoreLimit(user.id);
+  if (!gate.allowed) {
+    return NextResponse.json({ error: gate.reason, upgradeTo: gate.upgradeTo }, { status: 403 });
   }
 
   const { data } = await db.from("stores").insert({

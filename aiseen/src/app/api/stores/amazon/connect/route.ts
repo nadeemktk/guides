@@ -3,6 +3,7 @@ import { z } from "zod";
 import { testAmazonConnection } from "@/lib/stores/amazon";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getUser } from "@/lib/auth/actions";
+import { checkStoreLimit } from "@/lib/billing/gate";
 
 const schema = z.object({
   store_id: z.string().uuid().optional(), // update existing store
@@ -46,6 +47,12 @@ export async function POST(req: NextRequest) {
 
     await db.from("stores").update({ api_credentials: creds, is_active: true }).eq("id", store_id);
     return NextResponse.json({ ok: true });
+  }
+
+  // Gate: check store limit before creating new store
+  const gate = await checkStoreLimit(user.id);
+  if (!gate.allowed) {
+    return NextResponse.json({ error: gate.reason, upgradeTo: gate.upgradeTo }, { status: 403 });
   }
 
   const { data } = await db.from("stores").insert({

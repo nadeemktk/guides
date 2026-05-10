@@ -1,43 +1,71 @@
-import { CreditCard } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth/actions";
+import { createServiceClient } from "@/lib/supabase/server";
+import { PLAN_LIMITS, type PlanTier } from "@/lib/billing/gate";
+import { PLANS } from "@/lib/stripe";
+import { BillingClient } from "@/components/dashboard/billing/BillingClient";
 
 export const metadata = { title: "Billing – AISeen" };
 
-export default function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ upgraded?: string }>;
+}) {
+  const user = await getUser();
+  if (!user) redirect("/login");
+
+  const { upgraded } = await searchParams;
+
+  const supabase = createServiceClient();
+  const db = supabase as any;
+
+  const [profileRes, storeRes, queryRes] = await Promise.all([
+    db
+      .from("profiles")
+      .select("subscription_tier, subscription_status, stripe_customer_id, current_period_end, email")
+      .eq("id", user.id)
+      .maybeSingle(),
+    db
+      .from("stores")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+    db
+      .from("queries")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true),
+  ]);
+
+  const tier: PlanTier = profileRes.data?.subscription_tier ?? "free";
+  const limits = PLAN_LIMITS[tier];
+  const storeCount = storeRes.count ?? 0;
+  const queryCount = queryRes.count ?? 0;
+
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-8 max-w-3xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Billing</h1>
-        <p className="text-muted-foreground text-sm mt-1">Manage your subscription and invoices.</p>
+        <p className="text-muted-foreground text-sm mt-1">Manage your subscription and usage.</p>
       </div>
 
-      <div className="space-y-4">
-        {/* Current plan */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold">Current plan</h2>
-            <Badge variant="secondary">Free trial</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            You&apos;re on the 14-day free trial. Upgrade to keep access after it ends.
-          </p>
-        </div>
-
-        {/* Payment method */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Payment method</h2>
-          </div>
-          <p className="text-sm text-muted-foreground/50 italic">No payment method on file.</p>
-        </div>
-
-        {/* Invoices */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold mb-3">Invoices</h2>
-          <p className="text-sm text-muted-foreground/50 italic">No invoices yet.</p>
-        </div>
-      </div>
+      <BillingClient
+        tier={tier}
+        status={profileRes.data?.subscription_status ?? null}
+        periodEnd={profileRes.data?.current_period_end ?? null}
+        hasStripeCustomer={Boolean(profileRes.data?.stripe_customer_id)}
+        storeCount={storeCount}
+        storeLimit={limits.stores === Infinity ? null : limits.stores}
+        queryCount={queryCount}
+        queryLimit={limits.queries}
+        features={{
+          monitoring: limits.monitoring,
+          recommendations: limits.recommendations,
+          autoApply: limits.autoApply,
+        }}
+        plans={PLANS}
+        justUpgraded={upgraded === "1"}
+      />
     </div>
   );
 }

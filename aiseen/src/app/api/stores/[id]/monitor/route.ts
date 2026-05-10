@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUser } from "@/lib/auth/actions";
 import { createServiceClient } from "@/lib/supabase/server";
 import { inngest } from "@/lib/inngest/client";
+import { checkGate } from "@/lib/billing/gate";
 
 export async function POST(
   _req: NextRequest,
@@ -9,6 +10,12 @@ export async function POST(
 ) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Plan gate: monitoring requires starter+
+  const gate = await checkGate(user.id, "monitoring");
+  if (!gate.allowed) {
+    return NextResponse.json({ error: gate.reason, upgradeTo: gate.upgradeTo }, { status: 403 });
+  }
 
   const { id } = await params;
   const supabase = createServiceClient();

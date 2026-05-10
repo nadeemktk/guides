@@ -3,6 +3,7 @@ import { getUser } from "@/lib/auth/actions";
 import { createServiceClient } from "@/lib/supabase/server";
 import { findMatchingProduct } from "@/lib/apply/matcher";
 import { applyDescriptionToStore } from "@/lib/apply";
+import { checkGate } from "@/lib/billing/gate";
 
 export async function POST(
   req: NextRequest,
@@ -10,6 +11,12 @@ export async function POST(
 ) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Auto-apply via platform API requires pro plan
+  const gate = await checkGate(user.id, "autoApply");
+  if (!gate.allowed) {
+    return NextResponse.json({ error: gate.reason, upgradeTo: gate.upgradeTo }, { status: 403 });
+  }
 
   const { id } = await params;
   const body = await req.json().catch(() => ({})) as { productId?: string };
