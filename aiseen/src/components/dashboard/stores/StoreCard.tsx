@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ConnectShopify } from "./ConnectShopify";
 import { ConnectAmazon } from "./ConnectAmazon";
 import { ConnectWooCommerce } from "./ConnectWooCommerce";
-import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle } from "lucide-react";
+import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface Store {
@@ -34,6 +34,8 @@ export function StoreCard({ store }: { store: Store }) {
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   async function handleTest() {
     setTesting(true);
@@ -46,6 +48,23 @@ export function StoreCard({ store }: { store: Store }) {
       setTestResult({ ok: false, error: "Network error" });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch(`/api/stores/${store.id}/sync`, { method: "POST" });
+      const data = await res.json() as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok) { setSyncMsg(`Error: ${data.error ?? "Sync failed"}`); return; }
+      setSyncMsg("Sync started — catalog will update in the background.");
+      // Refresh after a brief delay so the user sees the message
+      setTimeout(() => router.refresh(), 3000);
+    } catch {
+      setSyncMsg("Network error — try again.");
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -87,11 +106,11 @@ export function StoreCard({ store }: { store: Store }) {
         </div>
       </div>
 
-      {store.catalog_last_synced_at && (
-        <p className="text-xs text-muted-foreground">
-          Catalog synced {formatDate(store.catalog_last_synced_at)}
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {store.catalog_last_synced_at
+          ? `Catalog synced ${formatDate(store.catalog_last_synced_at)}`
+          : "Catalog not synced yet"}
+      </p>
 
       {testResult && (
         <div className={`flex items-center gap-1.5 text-xs rounded-md px-3 py-2 ${
@@ -104,8 +123,23 @@ export function StoreCard({ store }: { store: Store }) {
           {testResult.ok ? "Connection OK" : testResult.error ?? "Connection failed"}
         </div>
       )}
+      {syncMsg && (
+        <p className="text-xs text-muted-foreground">{syncMsg}</p>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
+        {store.platform !== "manual" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            <Database className={`h-3.5 w-3.5 mr-1.5 ${syncing ? "animate-pulse" : ""}`} />
+            {syncing ? "Starting…" : "Sync catalog"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
