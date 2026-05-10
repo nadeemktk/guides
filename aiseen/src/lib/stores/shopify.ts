@@ -6,7 +6,7 @@ export interface ShopifyCredentials {
   shop: string;
 }
 
-const SHOPIFY_SCOPES = "read_products,read_inventory";
+const SHOPIFY_SCOPES = "read_products,read_inventory,write_products";
 
 export function normalizeShop(raw: string): string {
   const s = raw.trim().toLowerCase().replace(/^https?:\/\//, "");
