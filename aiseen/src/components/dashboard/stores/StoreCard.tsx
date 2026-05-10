@@ -9,6 +9,7 @@ import { ConnectAmazon } from "./ConnectAmazon";
 import { ConnectWooCommerce } from "./ConnectWooCommerce";
 import { ShoppingBag, Trash2, RefreshCw, CheckCircle, XCircle, Database, Search, Play, Lightbulb } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { UpgradeDialog } from "@/components/dashboard/billing/UpgradeDialog";
 
 interface Store {
   id: string;
@@ -39,6 +40,7 @@ export function StoreCard({ store }: { store: Store }) {
   const [generatingQueries, setGeneratingQueries] = useState(false);
   const [monitoring, setMonitoring] = useState(false);
   const [generatingRecs, setGeneratingRecs] = useState(false);
+  const [upgradeDialog, setUpgradeDialog] = useState<{ feature: string; upgradeTo: string } | null>(null);
 
   async function handleTest() {
     setTesting(true);
@@ -76,7 +78,11 @@ export function StoreCard({ store }: { store: Store }) {
     setSyncMsg(null);
     try {
       const res = await fetch(`/api/stores/${store.id}/monitor`, { method: "POST" });
-      const data = await res.json() as { message?: string; error?: string; activeQueries?: number };
+      const data = await res.json() as { message?: string; error?: string; activeQueries?: number; upgradeTo?: string };
+      if (res.status === 403 && data.upgradeTo) {
+        setUpgradeDialog({ feature: "Monitoring", upgradeTo: data.upgradeTo });
+        return;
+      }
       setSyncMsg(res.ok
         ? `Monitoring started — running ${data.activeQueries} queries against ChatGPT, Gemini & Perplexity.`
         : `Error: ${data.error}`);
@@ -92,7 +98,11 @@ export function StoreCard({ store }: { store: Store }) {
     setSyncMsg(null);
     try {
       const res = await fetch(`/api/stores/${store.id}/recommendations/generate`, { method: "POST" });
-      const data = await res.json() as { message?: string; error?: string };
+      const data = await res.json() as { message?: string; error?: string; upgradeTo?: string };
+      if (res.status === 403 && data.upgradeTo) {
+        setUpgradeDialog({ feature: "Recommendations", upgradeTo: data.upgradeTo });
+        return;
+      }
       setSyncMsg(res.ok ? "Recommendation generation started — visit the Recommendations page shortly." : `Error: ${data.error}`);
     } catch {
       setSyncMsg("Network error — try again.");
@@ -248,6 +258,14 @@ export function StoreCard({ store }: { store: Store }) {
           Remove
         </Button>
       </div>
+
+      {upgradeDialog && (
+        <UpgradeDialog
+          featureName={upgradeDialog.feature}
+          upgradeTo={upgradeDialog.upgradeTo}
+          onClose={() => setUpgradeDialog(null)}
+        />
+      )}
     </div>
   );
 }

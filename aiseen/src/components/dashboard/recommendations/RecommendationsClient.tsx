@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RefreshCw, Lightbulb, CheckCircle, XCircle, ChevronDown, ChevronUp, Zap, Search } from "lucide-react";
+import { UpgradeDialog } from "@/components/dashboard/billing/UpgradeDialog";
 
 interface Recommendation {
   id: string;
@@ -301,6 +302,7 @@ export function RecommendationsClient({ stores, initialStoreId }: { stores: Stor
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState<string | null>(null);
+  const [upgradeDialog, setUpgradeDialog] = useState<{ feature: string; upgradeTo: string } | null>(null);
 
   const currentStore = stores.find((s) => s.id === storeId);
 
@@ -346,9 +348,12 @@ export function RecommendationsClient({ stores, initialStoreId }: { stores: Stor
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(productId ? { productId } : {}),
     });
-    const data = await res.json() as { ok?: boolean; autoApplied?: boolean; message?: string; needsProductSelection?: boolean; error?: string };
+    const data = await res.json() as { ok?: boolean; autoApplied?: boolean; message?: string; needsProductSelection?: boolean; error?: string; upgradeTo?: string };
+    if (res.status === 403 && data.upgradeTo) {
+      setUpgradeDialog({ feature: "Auto-apply", upgradeTo: data.upgradeTo });
+      return data;
+    }
     if (data.ok && !data.needsProductSelection) {
-      // Remove from approved tab since it's now applied
       setRecs((prev) => prev.filter((r) => r.id !== id));
     }
     return data;
@@ -360,7 +365,11 @@ export function RecommendationsClient({ stores, initialStoreId }: { stores: Stor
     setGenMsg(null);
     try {
       const res = await fetch(`/api/stores/${storeId}/recommendations/generate`, { method: "POST" });
-      const data = await res.json() as { message?: string; error?: string };
+      const data = await res.json() as { message?: string; error?: string; upgradeTo?: string };
+      if (res.status === 403 && data.upgradeTo) {
+        setUpgradeDialog({ feature: "Recommendations", upgradeTo: data.upgradeTo });
+        return;
+      }
       if (!res.ok) { setGenMsg(`Error: ${data.error}`); return; }
       setGenMsg("Recommendation generation started — refresh in a moment to see results.");
       setTimeout(() => fetchRecs(storeId, activeTab), 8000);
@@ -466,6 +475,14 @@ export function RecommendationsClient({ stores, initialStoreId }: { stores: Stor
           />
         ))}
       </div>
+
+      {upgradeDialog && (
+        <UpgradeDialog
+          featureName={upgradeDialog.feature}
+          upgradeTo={upgradeDialog.upgradeTo}
+          onClose={() => setUpgradeDialog(null)}
+        />
+      )}
     </div>
   );
 }
