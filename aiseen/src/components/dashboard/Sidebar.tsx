@@ -12,11 +12,13 @@ import {
   Settings,
   CreditCard,
   Zap,
+  ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/stores", label: "Stores", icon: ShoppingBag },
   { href: "/queries", label: "Queries", icon: Search },
   { href: "/mentions", label: "Mentions", icon: MessageSquare },
   { href: "/competitors", label: "Competitors", icon: Users },

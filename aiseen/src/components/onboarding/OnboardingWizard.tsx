@@ -239,7 +239,7 @@ export function OnboardingWizard() {
         is_active: true,
       });
 
-      router.push("/overview");
+      router.push("/stores");
     });
   }
 
