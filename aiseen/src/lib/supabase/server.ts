@@ -26,23 +26,18 @@ export async function createClient() {
   );
 }
 
-export async function createServiceClient() {
-  const cookieStore = await cookies();
+// Service role client — synchronous, no cookie dependency.
+// The service key bypasses RLS so user session cookies are not needed.
+// This must stay synchronous so all API routes and server components
+// that call it without `await` receive the client directly.
+export function createServiceClient() {
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {}
-        },
+        getAll() { return []; },
+        setAll() {},
       },
     }
   );

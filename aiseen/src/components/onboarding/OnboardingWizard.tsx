@@ -208,6 +208,7 @@ export function OnboardingWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [pending, startTransition] = useTransition();
+  const [wizardError, setWizardError] = useState<string | null>(null);
   const [data, setData] = useState<WizardData>({
     platform: null,
     storeUrl: "",
@@ -221,25 +222,37 @@ export function OnboardingWizard() {
     if (step < 2) { setStep(step + 1); return; }
 
     // Final step — save store to DB
+    setWizardError(null);
     startTransition(async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push("/login");
+          return;
+        }
 
-      // Cast to any — types will be regenerated with `supabase gen types` once linked
-      const db = supabase as any;
-      await db.from("stores").insert({
-        user_id: user.id,
-        platform: updated.platform === "other" ? "manual" : updated.platform,
-        store_url: updated.storeUrl,
-        brand_name: updated.brandName,
-        brand_aliases: updated.brandAliases
-          ? updated.brandAliases.split(",").map((s: string) => s.trim()).filter(Boolean)
-          : [],
-        is_active: true,
-      });
+        const db = supabase as any;
+        const { error } = await db.from("stores").insert({
+          user_id: user.id,
+          platform: updated.platform === "other" ? "manual" : updated.platform,
+          store_url: updated.storeUrl,
+          brand_name: updated.brandName,
+          brand_aliases: updated.brandAliases
+            ? updated.brandAliases.split(",").map((s: string) => s.trim()).filter(Boolean)
+            : [],
+          is_active: true,
+        });
 
-      router.push("/stores");
+        if (error) {
+          setWizardError("Failed to save your store. Please try again.");
+          return;
+        }
+
+        router.push("/stores");
+      } catch {
+        setWizardError("Something went wrong. Please try again.");
+      }
     });
   }
 
@@ -252,6 +265,11 @@ export function OnboardingWizard() {
       <CurrentStep onNext={advance} data={data} />
       {pending && (
         <p className="text-sm text-muted-foreground text-center mt-4">Setting up your account…</p>
+      )}
+      {wizardError && (
+        <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md mt-4 text-center">
+          {wizardError}
+        </p>
       )}
     </div>
   );
