@@ -49,42 +49,49 @@ export async function generateQueries(
   }
 }
 
-// Fallback queries when no API key is available — covers common query patterns
+// Fallback queries when Claude API is unavailable — uses brand name and any detected categories
 function generateFallbackQueries(
-  _brandName: string,
+  brandName: string,
   products: ScrapedProduct[],
   count: number
 ): GeneratedQuery[] {
   const categories = [...new Set(products.map((p) => p.productType).filter(Boolean))];
-  const category = categories[0] || "products";
+  const category = categories[0] || "";
+  const sub = category || "products";
+  const brand = brandName || "this brand";
 
-  const templates: GeneratedQuery[] = [
-    { query_text: `best ${category} for beginners`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `top rated ${category} under $100`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best ${category} 2026`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `sustainable ${category} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} gift ideas`, category: "gift", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best ${category} for professionals`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `affordable ${category} that lasts`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `eco-friendly ${category} alternatives`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} for travel`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `premium ${category} worth the price`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `most durable ${category}`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} with best reviews`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `beginner ${category} starter kit`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} for small spaces`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `ethical ${category} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} under $50`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `luxury ${category} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} for beginners vs advanced`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
-    { query_text: `best ${category} for home use`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} that doesn't break easily`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `highly rated ${category} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} gift under $75`, category: "gift", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best value ${category}`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${category} for kids and adults`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `waterproof ${category}`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
+  // Brand-specific queries that test if AI recommends this brand organically
+  const brandedTemplates: GeneratedQuery[] = [
+    { query_text: `best alternatives to ${brand}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `sites like ${brand}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `is ${brand} reliable for online shopping`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
+    { query_text: `${brand} vs competitors`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
+    { query_text: `top ${sub} stores online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
   ];
 
-  return templates.slice(0, count);
+  // Category-based queries (generic but still useful)
+  const categoryTemplates: GeneratedQuery[] = [
+    { query_text: `best ${sub} for beginners`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `top rated ${sub} under $100`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `best ${sub} 2026`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `sustainable ${sub} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} gift ideas`, category: "gift", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `best ${sub} for professionals`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `affordable ${sub} that lasts`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `eco-friendly ${sub} alternatives`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} for travel`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `premium ${sub} worth the price`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `most durable ${sub}`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} with best reviews`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `beginner ${sub} starter kit`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `ethical ${sub} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} under $50`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `luxury ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} for beginners vs advanced`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
+    { query_text: `best ${sub} for home use`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `highly rated ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `best value ${sub}`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+  ];
+
+  return [...brandedTemplates, ...categoryTemplates].slice(0, count);
 }

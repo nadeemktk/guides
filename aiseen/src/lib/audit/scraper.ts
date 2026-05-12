@@ -94,11 +94,11 @@ async function scrapeStoreMeta(baseUrl: string): Promise<{ title: string }> {
   }
 }
 
-// Generic scraper for non-Shopify stores — extracts title and products from structured data
+// Generic scraper for non-Shopify stores — extracts title, products, and category hints
 async function scrapeGeneric(baseUrl: string): Promise<ScrapedStore | null> {
   try {
     const res = await fetch(baseUrl, {
-      headers: { "User-Agent": "AISeen/1.0 (AI Visibility Scanner)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; AISeen/1.0)" },
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return null;
@@ -108,18 +108,61 @@ async function scrapeGeneric(baseUrl: string): Promise<ScrapedStore | null> {
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     const storeName = titleMatch?.[1]?.trim() ?? brandName;
 
-    // Try to extract product data from JSON-LD on the homepage
+    // Try JSON-LD products first
     const jsonLdProducts = extractJsonLdProducts(html);
+    if (jsonLdProducts.length > 0) {
+      return { brandName, storeName, products: jsonLdProducts, storeUrl: baseUrl };
+    }
+
+    // For SPAs/non-Shopify stores: synthesise synthetic "products" from nav + meta
+    // so the query generator has category context even without real product data
+    const categoryHints = extractCategoryHints(html);
+    const syntheticProducts: ScrapedProduct[] = categoryHints.map((cat) => ({
+      title: cat,
+      description: "",
+      productType: cat,
+      vendor: brandName,
+      price: 0,
+      tags: [],
+      url: baseUrl,
+    }));
 
     return {
       brandName,
       storeName,
-      products: jsonLdProducts,
+      products: syntheticProducts,
       storeUrl: baseUrl,
     };
   } catch {
     return null;
   }
+}
+
+// Extract category names from nav menus and meta description
+function extractCategoryHints(html: string): string[] {
+  const hints = new Set<string>();
+
+  // Meta description often contains product categories
+  const metaDesc = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']{10,200})["']/i)?.[1] ?? "";
+  const descWords = metaDesc.match(/\b(electronics|fashion|clothing|shoes|beauty|home|furniture|sports|toys|books|grocery|jewelry|watches|bags|accessories|mobiles|laptops|cameras|appliances)\b/gi) ?? [];
+  descWords.forEach((w) => hints.add(w.toLowerCase()));
+
+  // og:description
+  const ogDesc = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{10,200})["']/i)?.[1] ?? "";
+  const ogWords = ogDesc.match(/\b(electronics|fashion|clothing|shoes|beauty|home|furniture|sports|toys|books|grocery|jewelry|watches|bags|accessories|mobiles|laptops|cameras|appliances)\b/gi) ?? [];
+  ogWords.forEach((w) => hints.add(w.toLowerCase()));
+
+  // Nav links — grab short link texts that look like product categories
+  const navSection = html.match(/<nav[^>]*>([\s\S]{0,8000}?)<\/nav>/i)?.[1] ?? html.slice(0, 20000);
+  const linkTexts = [...navSection.matchAll(/<a[^>]*>([^<]{3,25})<\/a>/gi)].map((m) => m[1].trim());
+  const skipWords = /login|sign|cart|account|about|contact|help|faq|blog|terms|privacy|order|track|wish/i;
+  for (const text of linkTexts) {
+    if (!skipWords.test(text) && /^[a-z &'-]+$/i.test(text)) {
+      hints.add(text.toLowerCase());
+    }
+  }
+
+  return [...hints].slice(0, 8);
 }
 
 function extractBrandFromHtml(html: string): string {
