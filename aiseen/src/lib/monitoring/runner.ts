@@ -4,7 +4,7 @@ import { detectMention } from "@/lib/audit/mentionDetector";
 import { computeScore } from "@/lib/audit/scorer";
 import type { QueryResult } from "@/lib/audit/scorer";
 
-const PROVIDERS: FreeAuditProvider[] = ["openai", "gemini", "perplexity"];
+const PROVIDERS: FreeAuditProvider[] = ["openai", "gemini", "anthropic"];
 
 export interface DBQuery {
   id: string;
