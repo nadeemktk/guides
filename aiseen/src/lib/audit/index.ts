@@ -34,7 +34,7 @@ export async function runFreeAudit(
 
   // Step 2: Generate queries
   await onProgress?.({ step: "generating", completedQueries: 0, totalQueries: 25, partialResults: [] });
-  const queries = await generateQueries(scraped.brandName, scraped.products, 25);
+  const queries = await generateQueries(scraped, 25);
 
   // Step 3: Run queries against LLMs in batches of 5 for progress updates
   const queryResults: QueryResult[] = [];

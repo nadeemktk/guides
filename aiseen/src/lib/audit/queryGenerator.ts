@@ -1,32 +1,251 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import type { ScrapedProduct } from "./scraper";
-import { QUERY_GENERATION_PROMPT } from "@/lib/llm";
+import type { ScrapedStore } from "./scraper";
+import { analyzeBusinessProfile, type BusinessProfile } from "./businessAnalyzer";
 import type { GeneratedQuery } from "@/types";
 
-function buildProductSample(products: ScrapedProduct[]): string {
-  return products
-    .slice(0, 20)
-    .map(
-      (p) =>
-        `- ${p.title}${p.productType ? ` (${p.productType})` : ""}${
-          p.price ? ` — $${p.price}` : ""
-        }${p.tags.length ? ` [${p.tags.slice(0, 5).join(", ")}]` : ""}`
-    )
-    .join("\n");
+const QUERY_GENERATION_PROMPT = `You are an expert AI SEO analyst specializing in improving brand visibility in AI assistants (ChatGPT, Gemini, Claude, Perplexity).
+
+BRAND BEING ANALYZED: {brand_name}
+BUSINESS TYPE: {business_type}
+NICHE: {niche}
+TARGET AUDIENCE: {target_audience}
+MARKET/LOCATION: {location}
+KEY OFFERINGS: {key_offerings}
+PRICE POINT: {price_point}
+UNIQUE SELLING POINTS: {unique_selling_points}
+MAIN COMPETITORS: {competitors}
+RELEVANT KEYWORDS: {keywords}
+
+Generate {count} natural-language shopping queries that a real customer would type into ChatGPT, Gemini, or Google AI Overviews when looking for products/services like {brand_name}'s.
+
+CRITICAL RULES:
+- Do NOT mention {brand_name} by name in any query — these test whether AI recommends the brand organically
+- Do NOT write queries like "best alternatives to {brand_name}" — those prompt AI to list competitors, not the brand
+- ALL queries must be specific to the "{niche}" niche and "{location}" market
+- Include location/market qualifiers where natural (e.g. "in UAE", "online in Australia", "for US customers")
+- Write queries that are genuinely the types of questions where AI would potentially recommend {brand_name}
+
+Generate a balanced mix across these categories:
+- comparison: "best {niche} brands in {location}", ranking-style queries
+- problem-solving: specific pain points the {target_audience} face that {key_offerings} solve
+- gift: gift idea queries for occasions relevant to the {target_audience}
+- sustainability: ethical/eco-friendly queries if relevant to the niche
+- budget-tier: price-sensitive queries at the {price_point} tier
+- feature-specific: queries about specific features/attributes of the key offerings
+- use-case: queries for specific situations the {target_audience} encounters
+- long-tail-demographic: queries for specific demographic sub-groups within {target_audience}
+
+For each query return:
+- query_text: the exact query (natural language, conversational tone)
+- category: one of the categories listed above
+- intent: commercial / informational / navigational
+- expected_competitor_brands: which brands you'd expect AI to mention for this query
+
+Return as a JSON array only. No markdown. No explanation. Generate exactly {count} queries.`;
+
+function buildQueryPrompt(store: ScrapedStore, profile: BusinessProfile, count: number): string {
+  return QUERY_GENERATION_PROMPT
+    .replace(/{brand_name}/g, store.brandName)
+    .replace("{business_type}", profile.businessType)
+    .replace("{niche}", profile.niche)
+    .replace("{target_audience}", profile.targetAudience)
+    .replace("{location}", profile.location)
+    .replace("{key_offerings}", profile.keyOfferings.join(", "))
+    .replace("{price_point}", profile.pricePoint)
+    .replace("{unique_selling_points}", profile.uniqueSellingPoints.join(", "))
+    .replace("{competitors}", profile.estimatedCompetitors.join(", ") || "unknown")
+    .replace("{keywords}", profile.topKeywords.join(", "))
+    .replace("{count}", String(count));
+}
+
+function generateFallbackQueries(
+  store: ScrapedStore,
+  profile: BusinessProfile,
+  count: number
+): GeneratedQuery[] {
+  const { niche, targetAudience, location, keyOfferings, pricePoint, estimatedCompetitors } =
+    profile;
+  const loc = location !== "global" ? ` in ${location}` : "";
+  const offering = keyOfferings[0] || niche;
+  const alt = keyOfferings[1] || offering;
+
+  const templates: GeneratedQuery[] = [
+    {
+      query_text: `best ${niche} brands${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `top ${offering} for ${targetAudience}`,
+      category: "use-case",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `best ${pricePoint === "budget" ? "affordable" : pricePoint} ${niche}${loc}`,
+      category: "budget-tier",
+      intent: "commercial",
+      expected_competitor_brands: estimatedCompetitors.slice(0, 2),
+    },
+    {
+      query_text: `recommended ${offering} online${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `where to buy ${offering}${loc}`,
+      category: "use-case",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${niche} gift ideas for ${targetAudience}`,
+      category: "gift",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `sustainable ${niche} brands${loc}`,
+      category: "sustainability",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${offering} under $100${loc}`,
+      category: "budget-tier",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `premium ${niche} worth buying${loc}`,
+      category: "budget-tier",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `best ${offering} for beginners`,
+      category: "feature-specific",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `most popular ${niche} online stores${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `${offering} with best reviews${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${niche} recommendations 2026${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `ethical ${niche} brands to support`,
+      category: "sustainability",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `high quality ${offering} online`,
+      category: "feature-specific",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${offering} for everyday use`,
+      category: "use-case",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `best ${niche} deals online${loc}`,
+      category: "budget-tier",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${offering} that lasts long`,
+      category: "feature-specific",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${niche} shopping guide 2026`,
+      category: "comparison",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `trusted ${niche} online store${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${alt} for professionals${loc}`,
+      category: "use-case",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `best ${alt} in ${location !== "global" ? location : "2026"}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${niche} brand recommendations from experts`,
+      category: "comparison",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${offering} gift for ${targetAudience}`,
+      category: "gift",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `top rated ${niche} stores${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: estimatedCompetitors.slice(0, 2),
+    },
+  ];
+
+  // Deduplicate by query_text and filter store brand name from texts
+  const seen = new Set<string>();
+  const filtered = templates.filter((t) => {
+    if (seen.has(t.query_text)) return false;
+    seen.add(t.query_text);
+    return true;
+  });
+
+  return filtered.slice(0, count);
 }
 
 export async function generateQueries(
-  brandName: string,
-  products: ScrapedProduct[],
+  store: ScrapedStore,
   count: number = 25
 ): Promise<GeneratedQuery[]> {
-  const prompt = QUERY_GENERATION_PROMPT.replace("{count}", String(count))
-    .replace("{brand_name}", brandName)
-    .replace("{product_sample}", buildProductSample(products));
+  // Step 1: Understand the business — extract niche, audience, location, competitors
+  const profile = await analyzeBusinessProfile(store);
 
-  // Try Anthropic first, then Gemini, then hardcoded fallback
+  // Step 2: Build a dynamic niche-specific prompt using the business profile
+  const prompt = buildQueryPrompt(store, profile, count);
+
+  // Step 3: Try AI generation — Anthropic first, then Gemini, then profile-aware fallback
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       const { text } = await generateText({
@@ -38,7 +257,7 @@ export async function generateQueries(
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error("No JSON array in response");
       const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
-      if (parsed.length > 0) return parsed.slice(0, count);
+      if (parsed.length >= Math.floor(count * 0.8)) return parsed.slice(0, count);
     } catch (err) {
       console.error("Anthropic query generation failed:", err);
     }
@@ -58,66 +277,12 @@ export async function generateQueries(
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error("No JSON array in response");
       const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
-      if (parsed.length > 0) return parsed.slice(0, count);
+      if (parsed.length >= Math.floor(count * 0.8)) return parsed.slice(0, count);
     } catch (err) {
       console.error("Gemini query generation failed:", err);
     }
   }
 
-  console.warn("All AI query generation failed — using static fallback for brand:", brandName);
-  return generateFallbackQueries(brandName, products, count);
-}
-
-function generateFallbackQueries(
-  brandName: string,
-  products: ScrapedProduct[],
-  count: number
-): GeneratedQuery[] {
-  const categories = [...new Set(products.map((p) => p.productType).filter(Boolean))];
-  const category = categories[0] || "";
-  const sub = category || "products";
-  const noCategory = !category;
-
-  // When no product category is known, use general e-commerce queries where
-  // a popular brand could be organically recommended by AI.
-  // IMPORTANT: never use "best alternatives to X" — that prompts AI to list
-  // competitors, not the brand itself, making the score always 0.
-  const contextualTemplates: GeneratedQuery[] = noCategory ? [
-    { query_text: "best online shopping websites 2026", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: "most popular online marketplaces", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: "top e-commerce sites with fast delivery", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: "trusted online stores for shopping", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: "best websites to shop online for deals", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-  ] : [
-    { query_text: `best online stores for ${sub}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `top websites to buy ${sub} online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `most popular ${sub} retailers online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `where to buy ${sub} with fast delivery`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `recommended sites for ${sub} shopping`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-  ];
-
-  const genericTemplates: GeneratedQuery[] = [
-    { query_text: `best ${sub} for beginners`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `top rated ${sub} under $100`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best ${sub} 2026`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `sustainable ${sub} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} gift ideas`, category: "gift", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best ${sub} for professionals`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `affordable ${sub} that lasts`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `eco-friendly ${sub} alternatives`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} for travel`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `premium ${sub} worth the price`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `most durable ${sub}`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} with best reviews`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `beginner ${sub} starter kit`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `ethical ${sub} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} under $50`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `luxury ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best ${sub} for home use`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `highly rated ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `best value ${sub}`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} for kids and families`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
-  ];
-
-  return [...contextualTemplates, ...genericTemplates].slice(0, count);
+  console.warn("All AI query generation failed — using profile-aware fallback for:", store.brandName);
+  return generateFallbackQueries(store, profile, count);
 }

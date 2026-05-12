@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateQueries } from "@/lib/audit/queryGenerator";
-import type { ScrapedProduct } from "@/lib/audit/scraper";
+import type { ScrapedProduct, ScrapedStore } from "@/lib/audit/scraper";
 import type { GeneratedQuery } from "@/types";
 
 interface DBProduct {
@@ -45,7 +45,7 @@ export async function generateQueriesForStore(
     .eq("store_id", store.id)
     .limit(100);
 
-  const scraped: ScrapedProduct[] = (products ?? []).map(toScrapedProduct);
+  const scrapedProducts: ScrapedProduct[] = (products ?? []).map(toScrapedProduct);
 
   // Derive brand name: prefer stored brand_name, fall back to domain
   const brandName =
@@ -54,7 +54,22 @@ export async function generateQueriesForStore(
       .hostname.replace(/^www\./, "")
       .split(".")[0];
 
-  return generateQueries(brandName, scraped, count);
+  const storeUrl = store.store_url.startsWith("http")
+    ? store.store_url
+    : `https://${store.store_url}`;
+
+  const storeForAnalysis: ScrapedStore = {
+    brandName,
+    storeName: brandName,
+    products: scrapedProducts,
+    storeUrl,
+    metaDescription: "",
+    headings: [],
+    navItems: [],
+    rawContentSnippet: "",
+  };
+
+  return generateQueries(storeForAnalysis, count);
 }
 
 /**
