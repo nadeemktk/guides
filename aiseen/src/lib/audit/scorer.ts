@@ -30,7 +30,7 @@ export interface AuditScore {
 }
 
 export function computeScore(queryResults: QueryResult[]): AuditScore {
-  const providers: FreeAuditProvider[] = ["openai", "gemini", "perplexity"];
+  const providers: FreeAuditProvider[] = ["openai", "gemini", "anthropic"];
 
   let totalRuns = 0;
   let runsWithMention = 0;
@@ -110,9 +110,9 @@ export function computeScore(queryResults: QueryResult[]): AuditScore {
       mentionRate: byProvider.gemini.totalRuns > 0 ? byProvider.gemini.mentionCount / byProvider.gemini.totalRuns : 0,
       avgPosition: byProvider.gemini.positionCount > 0 ? byProvider.gemini.positionSum / byProvider.gemini.positionCount : 0,
     },
-    perplexity: {
-      mentionRate: byProvider.perplexity.totalRuns > 0 ? byProvider.perplexity.mentionCount / byProvider.perplexity.totalRuns : 0,
-      avgPosition: byProvider.perplexity.positionCount > 0 ? byProvider.perplexity.positionSum / byProvider.perplexity.positionCount : 0,
+    anthropic: {
+      mentionRate: byProvider.anthropic.totalRuns > 0 ? byProvider.anthropic.mentionCount / byProvider.anthropic.totalRuns : 0,
+      avgPosition: byProvider.anthropic.positionCount > 0 ? byProvider.anthropic.positionSum / byProvider.anthropic.positionCount : 0,
     },
   };
 
