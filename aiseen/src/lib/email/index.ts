@@ -24,7 +24,7 @@ export async function sendAuditReportEmail(data: AuditReportEmailData) {
   const { to, brandName, auditId, visibilityScore, appUrl } = data;
 
   return getResend().emails.send({
-    from: "AISeen <reports@aiseen.com>",
+    from: process.env.RESEND_FROM_EMAIL ?? "AISeen <onboarding@resend.dev>",
     to,
     subject: `Your AI Visibility Report for ${brandName} is ready`,
     html: `
@@ -33,7 +33,7 @@ export async function sendAuditReportEmail(data: AuditReportEmailData) {
 <head><meta charset="utf-8" /></head>
 <body style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
   <h1 style="font-size: 24px; font-weight: bold; color: #111;">Your AI Visibility Report</h1>
-  <p style="color: #555;">Here's how ${brandName} performs across ChatGPT, Perplexity, and Gemini.</p>
+  <p style="color: #555;">Here's how ${brandName} performs across ChatGPT, Gemini, and Claude.</p>
 
   <div style="background: #f5f5f5; border-radius: 12px; padding: 24px; margin: 24px 0; text-align: center;">
     <div style="font-size: 64px; font-weight: bold; color: ${visibilityScore > 60 ? '#22c55e' : visibilityScore > 30 ? '#f59e0b' : '#ef4444'};">
@@ -62,7 +62,7 @@ export async function sendAuditReportEmail(data: AuditReportEmailData) {
 
 export async function sendWelcomeEmail(to: string, name: string) {
   return getResend().emails.send({
-    from: "AISeen <hello@aiseen.com>",
+    from: process.env.RESEND_FROM_EMAIL ?? "AISeen <onboarding@resend.dev>",
     to,
     subject: "Welcome to AISeen — let's get your store visible to AI",
     html: `

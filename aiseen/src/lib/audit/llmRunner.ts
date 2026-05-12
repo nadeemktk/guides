@@ -1,10 +1,10 @@
 import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { SHOPPING_PROMPT_TEMPLATE } from "@/lib/llm";
 
-export type FreeAuditProvider = "openai" | "gemini" | "perplexity";
+export type FreeAuditProvider = "openai" | "gemini" | "anthropic";
 
 export interface LLMResult {
   provider: FreeAuditProvider;
@@ -19,7 +19,7 @@ export interface LLMResult {
 const COST_PER_1K: Record<string, number> = {
   "gpt-4o-mini": 0.00015,
   "gemini-2.5-flash": 0.000075,
-  sonar: 0.001,
+  "claude-haiku-4-5-20251001": 0.0000008,
 };
 
 function buildShoppingPrompt(queryText: string): string {
@@ -90,23 +90,19 @@ async function callGemini(queryText: string): Promise<LLMResult> {
   }
 }
 
-async function callPerplexity(queryText: string): Promise<LLMResult> {
-  const model = "sonar";
+async function callAnthropic(queryText: string): Promise<LLMResult> {
+  const model = "claude-haiku-4-5-20251001";
   const start = Date.now();
   try {
-    const perplexity = createOpenAI({
-      baseURL: "https://api.perplexity.ai",
-      apiKey: process.env.PERPLEXITY_API_KEY ?? "",
-    });
     const { text, usage } = await generateText({
-      model: perplexity(model),
+      model: anthropic(model),
       messages: [{ role: "user", content: buildShoppingPrompt(queryText) }],
       maxOutputTokens: 512,
       temperature: 0.3,
     });
     const tokens = (usage?.totalTokens ?? 0);
     return {
-      provider: "perplexity",
+      provider: "anthropic",
       model,
       responseText: text,
       tokensUsed: tokens,
@@ -115,7 +111,7 @@ async function callPerplexity(queryText: string): Promise<LLMResult> {
     };
   } catch (err) {
     return {
-      provider: "perplexity",
+      provider: "anthropic",
       model,
       responseText: "",
       tokensUsed: 0,
@@ -140,8 +136,8 @@ export async function runQueryAgainstProviders(
       case "gemini":
         if (process.env.GOOGLE_GEMINI_API_KEY) calls.push(callGemini(queryText));
         break;
-      case "perplexity":
-        if (process.env.PERPLEXITY_API_KEY) calls.push(callPerplexity(queryText));
+      case "anthropic":
+        if (process.env.ANTHROPIC_API_KEY) calls.push(callAnthropic(queryText));
         break;
     }
   }
@@ -164,5 +160,5 @@ export async function runQueryAgainstProviders(
 const MOCK_RESPONSES: Record<string, string> = {
   openai: "For this type of product, I'd recommend looking at several established brands. Brand A is known for quality and durability, while Brand B offers great value at a lower price point. Brand C has excellent customer reviews and a strong warranty.",
   gemini: "There are several great options to consider. Brand B and Brand C are top picks in this category based on user reviews. Brand D is also worth considering for eco-conscious shoppers.",
-  perplexity: "Based on current reviews and availability, Brand C stands out as the top choice. Brand A is also frequently recommended. For budget options, Brand B offers similar features at a lower cost.",
+  anthropic: "Based on my analysis, Brand C stands out as the top choice for quality and value. Brand A is also frequently recommended by experts. For budget-conscious shoppers, Brand B offers similar features at a lower cost.",
 };

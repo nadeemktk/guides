@@ -9,7 +9,7 @@ import type { FreeAuditProvider } from "./llmRunner";
 export { scrapeStore, generateQueries, detectMention, computeScore };
 export type { QueryResult };
 
-const FREE_AUDIT_PROVIDERS: FreeAuditProvider[] = ["openai", "gemini", "perplexity"];
+const FREE_AUDIT_PROVIDERS: FreeAuditProvider[] = ["openai", "gemini", "anthropic"];
 
 export interface AuditProgress {
   step: "scraping" | "generating" | "running" | "scoring" | "completed" | "failed";

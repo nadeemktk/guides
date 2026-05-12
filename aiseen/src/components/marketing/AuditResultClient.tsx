@@ -193,7 +193,7 @@ function ProgressDisplay({ summary }: { summary: AuditSummary }) {
     pending: "Starting analysis...",
     scraping: "Scraping your product catalog...",
     generating: "Generating shopping queries with AI...",
-    running: `Running queries across ChatGPT, Perplexity, and Gemini...`,
+    running: `Running queries across ChatGPT, Gemini, and Claude...`,
     scoring: "Computing visibility score...",
   };
 
@@ -402,7 +402,7 @@ export function AuditResultClient({ auditId, initialData }: { auditId: string; i
                       <th className="text-left p-3 font-medium">Query</th>
                       <th className="text-center p-3 font-medium">ChatGPT</th>
                       <th className="text-center p-3 font-medium">Gemini</th>
-                      <th className="text-center p-3 font-medium">Perplexity</th>
+                      <th className="text-center p-3 font-medium">Claude</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -411,7 +411,7 @@ export function AuditResultClient({ auditId, initialData }: { auditId: string; i
                         <td className="p-3 max-w-xs">
                           <span className="line-clamp-2">{q.query}</span>
                         </td>
-                        {(["openai", "gemini", "perplexity"] as const).map((provider) => {
+                        {(["openai", "gemini", "anthropic"] as const).map((provider) => {
                           const r = q.results[provider];
                           return (
                             <td key={provider} className="p-3 text-center">
