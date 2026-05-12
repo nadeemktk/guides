@@ -1,14 +1,14 @@
 import { generateText, generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { google } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 export type LLMProvider = "openai" | "anthropic" | "gemini" | "perplexity" | "google_aio";
 export type PlanTier = "free" | "starter" | "growth" | "pro";
 
 const MODELS: Record<LLMProvider, { pro: string; standard: string }> = {
   openai: { pro: "gpt-4o", standard: "gpt-4o-mini" },
-  anthropic: { pro: "claude-sonnet-4-6", standard: "claude-haiku-4-5-20251001" },
+  anthropic: { pro: "claude-sonnet-4-6", standard: "claude-3-5-haiku-20241022" },
   gemini: { pro: "gemini-2.5-pro", standard: "gemini-2.5-flash" },
   perplexity: { pro: "sonar", standard: "sonar" },
   google_aio: { pro: "google_aio", standard: "google_aio" },
@@ -19,7 +19,7 @@ const COST_PER_1K: Record<string, number> = {
   "gpt-4o": 0.005,
   "gpt-4o-mini": 0.00015,
   "claude-sonnet-4-6": 0.003,
-  "claude-haiku-4-5-20251001": 0.00025,
+  "claude-3-5-haiku-20241022": 0.00025,
   "gemini-2.5-pro": 0.00125,
   "gemini-2.5-flash": 0.000075,
   sonar: 0.001,
@@ -34,10 +34,15 @@ export function getModel(provider: LLMProvider, tier: PlanTier) {
       return { model: openai(modelId), modelId };
     case "anthropic":
       return { model: anthropic(modelId), modelId };
-    case "gemini":
-      return { model: google(modelId), modelId };
+    case "gemini": {
+      // Use explicit key because env var is GOOGLE_GEMINI_API_KEY,
+      // not the GOOGLE_GENERATIVE_AI_API_KEY the SDK auto-reads.
+      const googleAI = createGoogleGenerativeAI({
+        apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? "",
+      });
+      return { model: googleAI(modelId), modelId };
+    }
     default:
-      // Perplexity and Google AIO handled separately via direct HTTP
       return { model: null, modelId };
   }
 }

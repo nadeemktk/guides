@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { ScrapedProduct } from "./scraper";
 import { QUERY_GENERATION_PROMPT } from "@/lib/llm";
 import type { GeneratedQuery } from "@/types";
@@ -21,35 +22,52 @@ export async function generateQueries(
   products: ScrapedProduct[],
   count: number = 25
 ): Promise<GeneratedQuery[]> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return generateFallbackQueries(brandName, products, count);
-  }
-
   const prompt = QUERY_GENERATION_PROMPT.replace("{count}", String(count))
     .replace("{brand_name}", brandName)
     .replace("{product_sample}", buildProductSample(products));
 
-  try {
-    const { text } = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
-      messages: [{ role: "user", content: prompt }],
-      maxOutputTokens: 4096,
-      temperature: 0.7,
-    });
-
-    // Extract JSON array from response
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error("No JSON array in response");
-
-    const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
-    return parsed.slice(0, count);
-  } catch (err) {
-    console.error("Query generation failed, using fallback:", err);
-    return generateFallbackQueries(brandName, products, count);
+  // Try Anthropic first, then Gemini, then hardcoded fallback
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const { text } = await generateText({
+        model: anthropic("claude-3-5-haiku-20241022"),
+        messages: [{ role: "user", content: prompt }],
+        maxOutputTokens: 4096,
+        temperature: 0.7,
+      });
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error("No JSON array in response");
+      const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
+      if (parsed.length > 0) return parsed.slice(0, count);
+    } catch (err) {
+      console.error("Anthropic query generation failed:", err);
+    }
   }
+
+  if (process.env.GOOGLE_GEMINI_API_KEY) {
+    try {
+      const googleAI = createGoogleGenerativeAI({
+        apiKey: process.env.GOOGLE_GEMINI_API_KEY,
+      });
+      const { text } = await generateText({
+        model: googleAI("gemini-2.5-flash"),
+        messages: [{ role: "user", content: prompt }],
+        maxOutputTokens: 4096,
+        temperature: 0.7,
+      });
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error("No JSON array in response");
+      const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
+      if (parsed.length > 0) return parsed.slice(0, count);
+    } catch (err) {
+      console.error("Gemini query generation failed:", err);
+    }
+  }
+
+  console.warn("All AI query generation failed — using static fallback for brand:", brandName);
+  return generateFallbackQueries(brandName, products, count);
 }
 
-// Fallback queries when Claude API is unavailable — uses brand name and any detected categories
 function generateFallbackQueries(
   brandName: string,
   products: ScrapedProduct[],
@@ -58,19 +76,27 @@ function generateFallbackQueries(
   const categories = [...new Set(products.map((p) => p.productType).filter(Boolean))];
   const category = categories[0] || "";
   const sub = category || "products";
-  const brand = brandName || "this brand";
+  const noCategory = !category;
 
-  // Brand-specific queries that test if AI recommends this brand organically
-  const brandedTemplates: GeneratedQuery[] = [
-    { query_text: `best alternatives to ${brand}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `sites like ${brand}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `is ${brand} reliable for online shopping`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
-    { query_text: `${brand} vs competitors`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
-    { query_text: `top ${sub} stores online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+  // When no product category is known, use general e-commerce queries where
+  // a popular brand could be organically recommended by AI.
+  // IMPORTANT: never use "best alternatives to X" — that prompts AI to list
+  // competitors, not the brand itself, making the score always 0.
+  const contextualTemplates: GeneratedQuery[] = noCategory ? [
+    { query_text: "best online shopping websites 2026", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: "most popular online marketplaces", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: "top e-commerce sites with fast delivery", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: "trusted online stores for shopping", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: "best websites to shop online for deals", category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+  ] : [
+    { query_text: `best online stores for ${sub}`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `top websites to buy ${sub} online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `most popular ${sub} retailers online`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `where to buy ${sub} with fast delivery`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `recommended sites for ${sub} shopping`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
   ];
 
-  // Category-based queries (generic but still useful)
-  const categoryTemplates: GeneratedQuery[] = [
+  const genericTemplates: GeneratedQuery[] = [
     { query_text: `best ${sub} for beginners`, category: "feature-specific", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `top rated ${sub} under $100`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `best ${sub} 2026`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
@@ -87,11 +113,11 @@ function generateFallbackQueries(
     { query_text: `ethical ${sub} brands`, category: "sustainability", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `${sub} under $50`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `luxury ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
-    { query_text: `${sub} for beginners vs advanced`, category: "comparison", intent: "informational", expected_competitor_brands: [] },
     { query_text: `best ${sub} for home use`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `highly rated ${sub} brands`, category: "comparison", intent: "commercial", expected_competitor_brands: [] },
     { query_text: `best value ${sub}`, category: "budget-tier", intent: "commercial", expected_competitor_brands: [] },
+    { query_text: `${sub} for kids and families`, category: "use-case", intent: "commercial", expected_competitor_brands: [] },
   ];
 
-  return [...brandedTemplates, ...categoryTemplates].slice(0, count);
+  return [...contextualTemplates, ...genericTemplates].slice(0, count);
 }
