@@ -34,6 +34,13 @@ export async function POST(
 
   const email = sanitizeEmail(parsed.data.email);
 
+  if (!process.env.RESEND_API_KEY) {
+    return NextResponse.json(
+      { error: "Email sending is not configured. Please contact support." },
+      { status: 503 }
+    );
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -50,42 +57,31 @@ export async function POST(
     return NextResponse.json({ error: "Audit not found" }, { status: 404 });
   }
 
-  if (audit.full_report_unlocked && audit.brand_name) {
-    // Already unlocked — just resend
-    await sendEmailIfConfigured(email, audit.brand_name, id, audit.visibility_score ?? 0);
-    return NextResponse.json({ success: true });
+  // Unlock the report (idempotent)
+  if (!audit.full_report_unlocked) {
+    await supabase
+      .from("public_audits")
+      .update({ email, full_report_unlocked: true })
+      .eq("id", id);
   }
-
-  // Unlock the report
-  await supabase
-    .from("public_audits")
-    .update({ email, full_report_unlocked: true })
-    .eq("id", id);
 
   // Send the report email
-  if (audit.brand_name) {
-    await sendEmailIfConfigured(email, audit.brand_name, id, audit.visibility_score ?? 0);
-  }
-
-  return NextResponse.json({ success: true });
-}
-
-async function sendEmailIfConfigured(
-  email: string,
-  brandName: string,
-  auditId: string,
-  visibilityScore: number
-) {
-  if (!process.env.RESEND_API_KEY) return;
+  const brandName = audit.brand_name ?? "your store";
   try {
     await sendAuditReportEmail({
       to: email,
       brandName,
-      auditId,
-      visibilityScore,
+      auditId: id,
+      visibilityScore: audit.visibility_score ?? 0,
       appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://aiseen.com",
     });
   } catch (err) {
     console.error("Failed to send audit email:", err);
+    return NextResponse.json(
+      { error: "Failed to send email. Please try again or check your inbox." },
+      { status: 500 }
+    );
   }
+
+  return NextResponse.json({ success: true });
 }
