@@ -1,5 +1,5 @@
 import { scrapeStore } from "./scraper";
-import { generateQueries } from "./queryGenerator";
+import { generateQueries, analyzeBusinessProfile } from "./queryGenerator";
 import { runQueryAgainstProviders } from "./llmRunner";
 import { detectMention } from "./mentionDetector";
 import { computeScore, buildAuditSummary } from "./scorer";
@@ -12,7 +12,7 @@ export type { QueryResult };
 const FREE_AUDIT_PROVIDERS: FreeAuditProvider[] = ["openai", "gemini", "anthropic"];
 
 export interface AuditProgress {
-  step: "scraping" | "generating" | "running" | "scoring" | "completed" | "failed";
+  step: "scraping" | "analyzing" | "generating" | "running" | "scoring" | "completed" | "failed";
   completedQueries: number;
   totalQueries: number;
   partialResults: QueryResult[];
@@ -28,15 +28,19 @@ export async function runFreeAudit(
   storeName: string;
   summary: ReturnType<typeof buildAuditSummary>;
 }> {
-  // Step 1: Scrape store
+  // Step 1: Scrape the website (homepage + about/services pages)
   await onProgress?.({ step: "scraping", completedQueries: 0, totalQueries: 0, partialResults: [] });
   const scraped = await scrapeStore(storeUrl);
 
-  // Step 2: Generate queries
-  await onProgress?.({ step: "generating", completedQueries: 0, totalQueries: 25, partialResults: [] });
-  const queries = await generateQueries(scraped, 25);
+  // Step 2: Deep business profile analysis
+  await onProgress?.({ step: "analyzing", completedQueries: 0, totalQueries: 25, partialResults: [] });
+  const profile = await analyzeBusinessProfile(scraped);
 
-  // Step 3: Run queries against LLMs in batches of 5 for progress updates
+  // Step 3: Generate 25 niche-specific AI search queries (pass profile to avoid double AI call)
+  await onProgress?.({ step: "generating", completedQueries: 0, totalQueries: 25, partialResults: [] });
+  const queries = await generateQueries(scraped, 25, profile);
+
+  // Step 4: Run each query against real AI providers in batches
   const queryResults: QueryResult[] = [];
   const BATCH_SIZE = 5;
 
@@ -84,9 +88,9 @@ export async function runFreeAudit(
     });
   }
 
-  // Step 4: Score
+  // Step 5: Compute blended score (AI mentions + content quality)
   await onProgress?.({ step: "scoring", completedQueries: queries.length, totalQueries: queries.length, partialResults: queryResults });
-  const score = computeScore(queryResults);
+  const score = computeScore(queryResults, scraped, profile);
   const summary = buildAuditSummary(queryResults, score);
 
   await onProgress?.({ step: "completed", completedQueries: queries.length, totalQueries: queries.length, partialResults: queryResults });

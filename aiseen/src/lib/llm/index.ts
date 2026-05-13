@@ -14,7 +14,6 @@ const MODELS: Record<LLMProvider, { pro: string; standard: string }> = {
   google_aio: { pro: "google_aio", standard: "google_aio" },
 };
 
-// Cost per 1k tokens (input/output average) in USD — approximate
 const COST_PER_1K: Record<string, number> = {
   "gpt-4o": 0.005,
   "gpt-4o-mini": 0.00015,
@@ -35,8 +34,6 @@ export function getModel(provider: LLMProvider, tier: PlanTier) {
     case "anthropic":
       return { model: anthropic(modelId), modelId };
     case "gemini": {
-      // Use explicit key because env var is GOOGLE_GEMINI_API_KEY,
-      // not the GOOGLE_GENERATIVE_AI_API_KEY the SDK auto-reads.
       const googleAI = createGoogleGenerativeAI({
         apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? "",
       });
@@ -52,85 +49,102 @@ export function estimateCost(modelId: string, tokensUsed: number): number {
   return (tokensUsed / 1000) * rate;
 }
 
-export const SHOPPING_PROMPT_TEMPLATE = `You are a helpful shopping assistant. The user is researching a purchase. Recommend specific products and brands when relevant. Be specific — name the brands and products you'd recommend. If you'd suggest multiple options, list them in order of best fit.
+// Used by the LLM runner to simulate real AI assistant queries.
+// Neutral prompt that works for ALL business types (products, services, SaaS, local).
+export const SHOPPING_PROMPT_TEMPLATE = `You are a knowledgeable AI assistant helping someone research options and make informed decisions. Answer the following question with specific, named recommendations where appropriate. Include real brand names, companies, service providers, or products you know about. When you have multiple options to recommend, list them clearly in order of best fit with brief explanations for each.
 
-User question: {query_text}`;
+Question: {query_text}`;
 
-export const QUERY_GENERATION_PROMPT = `You are an expert e-commerce SEO and AI search optimization analyst.
+export const QUERY_GENERATION_PROMPT = `You are an expert AI search visibility analyst. Generate {count} highly specific, natural-language queries that real customers type into ChatGPT, Gemini, Claude, or Perplexity when looking for products or services like those offered by {brand_name}.
 
-I'll give you a brand and a sample of their product catalog. Generate {count} natural-language shopping queries that a real customer would type into ChatGPT, Perplexity, Gemini, or Google AI Overviews when they're considering buying products like these. The queries should NOT mention the brand by name — they're meant to test whether AI assistants recommend this brand organically.
+CRITICAL: Do NOT mention {brand_name} by name. These queries test whether AI assistants recommend the brand organically.
 
-Generate a balanced mix across these categories:
-- Comparison queries (e.g., "best wireless headphones under $200")
-- Problem-solving queries (e.g., "running shoes for plantar fasciitis")
-- Gift queries (e.g., "thoughtful gift for new mom under $50")
-- Sustainability/ethics queries (e.g., "ethical sneaker brands")
-- Alternative-seeking queries (e.g., "alternatives to Allbirds wool runners")
-- Budget-tier queries (e.g., "best budget yoga mat", "premium yoga mat worth the splurge")
-- Feature-specific queries (e.g., "yoga mat that doesn't slip when sweaty")
-- Use-case queries (e.g., "yoga mat for travel")
-- Long-tail demographic queries (e.g., "yoga gear for tall women over 6 feet")
+BUSINESS CONTEXT:
+- Brand: {brand_name}
+- Niche: {niche}
+- Location/Market: {location}
+- Key Offerings: {key_offerings}
+- Target Audience: {target_audience}
+- Known Competitors: {competitors}
+
+Generate queries covering: comparison, problem-solving, local-intent, use-case, budget-tier, feature-specific, trust-validation, discovery, and competitor-alternative categories.
+
+Every query must be:
+- Directly relevant to the {niche} niche in {location}
+- Naturally phrased as a real customer would speak
+- Unique (no duplicate-style phrasing)
+- Specific enough to surface real competitors in the same niche
 
 For each query return:
-- query_text
-- category (one of the categories above)
-- intent (commercial / informational / navigational)
-- expected_competitor_brands (which brands you'd expect AI to mention for this query)
+- query_text: the exact natural-language query
+- category: one of the categories above
+- intent: commercial | informational | navigational
+- expected_competitor_brands: brands you'd expect AI to mention for this query
 
+Return as a JSON array only. No markdown. Generate exactly {count} queries.`;
+
+export const RECOMMENDATIONS_PROMPT = `You are an AI search visibility expert and strategic consultant. Analyze these audit results and generate 5-8 highly specific, actionable recommendations to improve how often AI assistants (ChatGPT, Gemini, Perplexity) recommend {brand_name}.
+
+━━━ BRAND INTELLIGENCE ━━━
 Brand: {brand_name}
-Sample products (up to 50): {product_sample}
+Industry/Niche: {niche}
+Market: {location}
+Business Type: {business_type}
 
-Return as a JSON array. Generate exactly {count} queries.`;
+━━━ CURRENT AI VISIBILITY PERFORMANCE ━━━
+AI Visibility Score: {score}/100
+Mention Rate: {mention_rate}% of queries (industry average: 15-35%)
+Content Quality Score: {content_quality}/100
 
-export const RECOMMENDATIONS_PROMPT = `You are an AI search visibility expert. Analyze these monitoring results and generate 5-8 specific, actionable recommendations to improve how often AI assistants (ChatGPT, Gemini, Perplexity) recommend {brand_name}.
-
-CURRENT PERFORMANCE:
-- Visibility Score: {score}/100 (industry average: ~35)
-- Brand mentioned in {mention_rate}% of monitored queries
-
-QUERIES WHERE THE BRAND WAS NOT MENTIONED (recent):
+━━━ QUERIES WHERE THE BRAND IS NOT MENTIONED (missing out) ━━━
 {losing_queries}
 
-COMPETITORS BEING RECOMMENDED INSTEAD:
+━━━ COMPETITORS BEING RECOMMENDED INSTEAD ━━━
 {competitors}
 
-PRODUCT CATALOG SAMPLE:
+━━━ PRODUCT/SERVICE CATALOG SAMPLE ━━━
 {products}
 
-ATTRIBUTES AI CITES WHEN BRAND IS MENTIONED:
+━━━ ATTRIBUTES AI CITES WHEN BRAND IS MENTIONED ━━━
 {winning_reasons}
 
-Generate 5-8 recommendations. For each return:
-- rec_type: one of [description_rewrite, schema_markup, content_topic, review_site, feature_gap]
+Generate 5-8 recommendations. Each must be:
+1. Specific to {brand_name}'s actual situation (not generic advice)
+2. Directly actionable (what to write, create, or add)
+3. Grounded in the data above (reference specific gaps)
+4. Prioritized by expected impact
+
+For each recommendation return:
+- rec_type: one of [description_rewrite, schema_markup, content_topic, review_site, feature_gap, entity_building, structured_data, local_seo]
 - title: specific action title (max 12 words)
-- rationale: why this helps AI discover the brand (2-3 sentences, specific to the data above)
-- current_value: what the brand currently lacks or has (brief, based on the data — omit if not applicable)
-- suggested_value: exactly what to add or change
-- expected_impact: expected improvement description (e.g. "Could lift mention rate by 10-15%")
+- rationale: why this helps AI discover the brand — reference the specific data above (2-3 sentences)
+- current_value: what the brand currently lacks or has (specific, based on data)
+- suggested_value: exactly what to add or change (be specific)
+- expected_impact: expected improvement description
 
 Return strict JSON array only. No markdown fences. No explanation outside the JSON.
 [{"rec_type":..., "title":..., "rationale":..., "current_value":..., "suggested_value":..., "expected_impact":...}]`;
 
-export const MENTION_EXTRACTION_PROMPT = `You are analyzing an AI shopping assistant's response to extract structured data.
+export const MENTION_EXTRACTION_PROMPT = `You are analyzing an AI assistant's response to extract structured brand mention data.
 
 Brand we're tracking: {brand_name} (also known as: {brand_aliases})
-Products in our catalog: {top_50_product_titles}
+Our product/service catalog: {top_50_product_titles}
 
-Response to analyze:
+AI Response to analyze:
 """
 {response_text}
 """
 
-Extract:
+Extract the following:
 1. Was {brand_name} mentioned? (true/false)
-2. If yes, position in the response (1 = first brand mentioned, 2 = second, etc.)
+2. If yes, position in response (1 = first brand mentioned, 2 = second, etc.)
 3. How was {brand_name} described? (verbatim 1-2 sentences from the response)
-4. What reasons or attributes did the AI cite? (e.g., "affordable", "sustainable", "great reviews")
+4. What reasons or attributes did the AI cite? (e.g., "affordable", "sustainable", "certified", "local experts")
 5. Sentiment toward {brand_name}: positive/neutral/negative
-6. List ALL other brands mentioned in the response, in order
-7. For each competitor brand: what reasons were cited for them?
+6. ALL other brands mentioned in the response, in order of appearance
+7. For each competitor: what reasons were cited and what position were they mentioned?
 
-Return strict JSON matching this schema:
+Return strict JSON:
 {
   "own_brand_mentioned": boolean,
   "own_brand_position": number | null,
@@ -141,3 +155,6 @@ Return strict JSON matching this schema:
     { "name": string, "position": number, "reasons": string[], "description": string }
   ]
 }`;
+
+// Re-export for backwards compatibility
+export { generateText, generateObject };

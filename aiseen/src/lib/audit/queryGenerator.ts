@@ -5,259 +5,327 @@ import type { ScrapedStore } from "./scraper";
 import { analyzeBusinessProfile, type BusinessProfile } from "./businessAnalyzer";
 import type { GeneratedQuery } from "@/types";
 
-const QUERY_GENERATION_PROMPT = `You are an expert AI SEO analyst specializing in improving brand visibility in AI assistants (ChatGPT, Gemini, Claude, Perplexity).
+const QUERY_GENERATION_PROMPT = `You are a world-class AI search visibility analyst. Your job is to generate {count} highly specific, realistic queries that real customers type into ChatGPT, Gemini, Claude, or Perplexity when searching for products or services like those provided by {brand_name}.
 
-BRAND BEING ANALYZED: {brand_name}
-BUSINESS TYPE: {business_type}
-NICHE: {niche}
-TARGET AUDIENCE: {target_audience}
-MARKET/LOCATION: {location}
-KEY OFFERINGS: {key_offerings}
-PRICE POINT: {price_point}
-UNIQUE SELLING POINTS: {unique_selling_points}
-MAIN COMPETITORS: {competitors}
-RELEVANT KEYWORDS: {keywords}
+━━━ BUSINESS INTELLIGENCE ━━━
+Brand: {brand_name}
+Business Type: {business_type}
+Industry Vertical: {industry_vertical}
+Specific Niche: {niche}
+Sub-niche: {sub_niche}
+Market/Location: {location}
+Specific Areas Served: {location_specific}
+Target Audience: {target_audience}
+Key Offerings: {key_offerings}
+Problems Solved: {problems_solved}
+Price Tier: {price_point}
+Business Model: {business_model}
+Unique Differentiators: {unique_selling_points}
+Known Competitors in This Space: {competitors}
+Core Search Keywords: {keywords}
 
-Generate {count} natural-language shopping queries that a real customer would type into ChatGPT, Gemini, or Google AI Overviews when looking for products/services like {brand_name}'s.
+━━━ CRITICAL RULES ━━━
+1. NEVER mention {brand_name} by name in any query — queries simulate real users who don't know about this brand
+2. ALL queries MUST be directly relevant to the "{niche}" niche in the "{location}" market
+3. Queries must sound natural — exactly how a real person would type or speak to an AI assistant
+4. Every query must be UNIQUE — no similar-sounding duplicates
+5. Include location context naturally where it fits (e.g. "in Dubai", "UAE", "in the UK")
+6. Cover these intent types proportionally:
+   - Informational: "how to...", "what is the best...", "which is better..."
+   - Commercial: "best [service/product] in [location]", "recommend a [niche] provider"
+   - Comparison: "[option A] vs [option B]", "which [type] should I choose"
+   - Problem-solving: addressing specific pain points from {problems_solved}
+   - Local intent: "[niche] near me", "[niche] in [specific city]"
+   - Trust/validation: "most trusted [niche]", "top-rated [niche]"
 
-CRITICAL RULES:
-- Do NOT mention {brand_name} by name in any query — these test whether AI recommends the brand organically
-- Do NOT write queries like "best alternatives to {brand_name}" — those prompt AI to list competitors, not the brand
-- ALL queries must be specific to the "{niche}" niche and "{location}" market
-- Include location/market qualifiers where natural (e.g. "in UAE", "online in Australia", "for US customers")
-- Write queries that are genuinely the types of questions where AI would potentially recommend {brand_name}
+━━━ QUERY CATEGORIES (distribute across all) ━━━
+- comparison: ranking/best-of queries for this niche
+- problem-solving: queries about specific pain points the target audience faces
+- local-intent: location-specific queries (critical for local/regional businesses)
+- use-case: specific scenarios where the offerings are needed
+- budget-tier: price-sensitivity queries at the {price_point} level
+- feature-specific: queries about specific capabilities or attributes of the offerings
+- trust-validation: queries about reliability, reviews, credentials
+- discovery: queries for people researching options for the first time
+- competitor-alternative: "alternatives to [competitor]" style queries
 
-Generate a balanced mix across these categories:
-- comparison: "best {niche} brands in {location}", ranking-style queries
-- problem-solving: specific pain points the {target_audience} face that {key_offerings} solve
-- gift: gift idea queries for occasions relevant to the {target_audience}
-- sustainability: ethical/eco-friendly queries if relevant to the niche
-- budget-tier: price-sensitive queries at the {price_point} tier
-- feature-specific: queries about specific features/attributes of the key offerings
-- use-case: queries for specific situations the {target_audience} encounters
-- long-tail-demographic: queries for specific demographic sub-groups within {target_audience}
+━━━ OUTPUT FORMAT ━━━
+Return a JSON array only. No markdown. No explanation. Exactly {count} queries.
+Each object:
+{
+  "query_text": "the exact natural-language query",
+  "category": "one of the categories above",
+  "intent": "commercial | informational | navigational",
+  "expected_competitor_brands": ["brands you'd expect AI to mention for this query"]
+}
 
-For each query return:
-- query_text: the exact query (natural language, conversational tone)
-- category: one of the categories listed above
-- intent: commercial / informational / navigational
-- expected_competitor_brands: which brands you'd expect AI to mention for this query
-
-Return as a JSON array only. No markdown. No explanation. Generate exactly {count} queries.`;
+━━━ QUALITY BAR ━━━
+Each query must pass this test: "Would a real customer searching for {niche} in {location} actually type this?"
+Reject any query that is too generic, too broad, or not specific to this niche.`;
 
 function buildQueryPrompt(store: ScrapedStore, profile: BusinessProfile, count: number): string {
+  const locationSpecific = profile.locationSpecific.length > 0
+    ? profile.locationSpecific.join(", ")
+    : profile.location;
+
   return QUERY_GENERATION_PROMPT
     .replace(/{brand_name}/g, store.brandName)
     .replace("{business_type}", profile.businessType)
+    .replace("{industry_vertical}", profile.industryVertical)
     .replace("{niche}", profile.niche)
-    .replace("{target_audience}", profile.targetAudience)
+    .replace("{sub_niche}", profile.subNiche)
     .replace("{location}", profile.location)
+    .replace("{location_specific}", locationSpecific)
+    .replace("{target_audience}", profile.targetAudience)
     .replace("{key_offerings}", profile.keyOfferings.join(", "))
+    .replace("{problems_solved}", profile.problemsSolved.join(", "))
     .replace("{price_point}", profile.pricePoint)
+    .replace("{business_model}", profile.businessModel)
     .replace("{unique_selling_points}", profile.uniqueSellingPoints.join(", "))
-    .replace("{competitors}", profile.estimatedCompetitors.join(", ") || "unknown")
+    .replace("{competitors}", profile.estimatedCompetitors.join(", ") || "not identified")
     .replace("{keywords}", profile.topKeywords.join(", "))
     .replace("{count}", String(count));
 }
 
-function generateFallbackQueries(
-  store: ScrapedStore,
-  profile: BusinessProfile,
-  count: number
-): GeneratedQuery[] {
-  const { niche, targetAudience, location, keyOfferings, pricePoint, estimatedCompetitors } =
-    profile;
-  const loc = location !== "global" ? ` in ${location}` : "";
-  const offering = keyOfferings[0] || niche;
-  const alt = keyOfferings[1] || offering;
+function validateQueries(queries: GeneratedQuery[], profile: BusinessProfile, brandName: string): GeneratedQuery[] {
+  const niches = [profile.niche.toLowerCase(), profile.subNiche.toLowerCase(), profile.industryVertical.toLowerCase()];
+  const niicheWords = niches.flatMap((n) => n.split(/[\s,]+/)).filter((w) => w.length > 3);
+  const locationWords = [profile.location.toLowerCase(), ...profile.locationSpecific.map((l) => l.toLowerCase())];
+  const offeringWords = profile.keyOfferings.flatMap((o) => o.toLowerCase().split(/\s+/)).filter((w) => w.length > 3);
+  const relevantWords = [...niicheWords, ...locationWords, ...offeringWords];
+
+  const seen = new Set<string>();
+  const validated: GeneratedQuery[] = [];
+
+  for (const q of queries) {
+    if (!q.query_text || typeof q.query_text !== "string") continue;
+    const queryLower = q.query_text.toLowerCase();
+
+    // Skip if brand name is mentioned
+    if (queryLower.includes(brandName.toLowerCase())) continue;
+
+    // Skip duplicates (normalized)
+    const normalized = queryLower.replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    // Skip if too short or too long
+    if (q.query_text.length < 10 || q.query_text.length > 200) continue;
+
+    // Check relevance: at least one relevant word should appear
+    const hasRelevantWord = relevantWords.some((w) => queryLower.includes(w));
+    if (!hasRelevantWord && validated.length >= 10) continue; // allow some looser queries early on
+
+    validated.push(q);
+  }
+
+  return validated;
+}
+
+function generateNicheSpecificFallback(store: ScrapedStore, profile: BusinessProfile, count: number): GeneratedQuery[] {
+  const loc = profile.location !== "global" ? ` in ${profile.location}` : "";
+  const locAlt = profile.locationSpecific.length > 0 ? ` in ${profile.locationSpecific[0]}` : loc;
+  const niche = profile.niche;
+  const subNiche = profile.subNiche;
+  const offering1 = profile.keyOfferings[0] || niche;
+  const offering2 = profile.keyOfferings[1] || niche;
+  const offering3 = profile.keyOfferings[2] || subNiche;
+  const audience = profile.targetAudience;
+  const problem1 = profile.problemsSolved[0] || `finding reliable ${niche}`;
+  const problem2 = profile.problemsSolved[1] || `choosing the best ${niche}`;
+  const comp1 = profile.estimatedCompetitors[0];
+  const comp2 = profile.estimatedCompetitors[1];
+  const priceAdj = profile.pricePoint === "budget" ? "affordable" :
+    profile.pricePoint === "premium" ? "premium" :
+    profile.pricePoint === "luxury" ? "luxury" : "best value";
 
   const templates: GeneratedQuery[] = [
     {
-      query_text: `best ${niche} brands${loc}`,
+      query_text: `best ${niche}${locAlt}`,
       category: "comparison",
       intent: "commercial",
-      expected_competitor_brands: estimatedCompetitors.slice(0, 3),
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 3),
     },
     {
-      query_text: `top ${offering} for ${targetAudience}`,
+      query_text: `top rated ${offering1} companies${loc}`,
+      category: "trust-validation",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
+    },
+    {
+      query_text: `${offering1} for ${audience}`,
       category: "use-case",
       intent: "commercial",
       expected_competitor_brands: [],
     },
     {
-      query_text: `best ${pricePoint === "budget" ? "affordable" : pricePoint} ${niche}${loc}`,
+      query_text: `who provides the best ${offering2}${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `${priceAdj} ${niche}${loc}`,
       category: "budget-tier",
       intent: "commercial",
-      expected_competitor_brands: estimatedCompetitors.slice(0, 2),
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
     },
     {
-      query_text: `recommended ${offering} online${loc}`,
-      category: "comparison",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `where to buy ${offering}${loc}`,
-      category: "use-case",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${niche} gift ideas for ${targetAudience}`,
-      category: "gift",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `sustainable ${niche} brands${loc}`,
-      category: "sustainability",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${offering} under $100${loc}`,
-      category: "budget-tier",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `premium ${niche} worth buying${loc}`,
-      category: "budget-tier",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `best ${offering} for beginners`,
-      category: "feature-specific",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `most popular ${niche} online stores${loc}`,
-      category: "comparison",
-      intent: "commercial",
-      expected_competitor_brands: estimatedCompetitors.slice(0, 3),
-    },
-    {
-      query_text: `${offering} with best reviews${loc}`,
-      category: "comparison",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${niche} recommendations 2026${loc}`,
-      category: "comparison",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `ethical ${niche} brands to support`,
-      category: "sustainability",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `high quality ${offering} online`,
-      category: "feature-specific",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${offering} for everyday use`,
-      category: "use-case",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `best ${niche} deals online${loc}`,
-      category: "budget-tier",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${offering} that lasts long`,
-      category: "feature-specific",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${niche} shopping guide 2026`,
-      category: "comparison",
+      query_text: `how to solve ${problem1}`,
+      category: "problem-solving",
       intent: "informational",
       expected_competitor_brands: [],
     },
     {
-      query_text: `trusted ${niche} online store${loc}`,
-      category: "comparison",
+      query_text: `most trusted ${offering1} provider${loc}`,
+      category: "trust-validation",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
+    },
+    {
+      query_text: `${offering2} near me${loc !== "" ? "" : " online"}`,
+      category: "local-intent",
       intent: "commercial",
       expected_competitor_brands: [],
     },
     {
-      query_text: `${alt} for professionals${loc}`,
-      category: "use-case",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `best ${alt} in ${location !== "global" ? location : "2026"}`,
-      category: "comparison",
-      intent: "commercial",
-      expected_competitor_brands: [],
-    },
-    {
-      query_text: `${niche} brand recommendations from experts`,
-      category: "comparison",
+      query_text: `best way to handle ${problem2}`,
+      category: "problem-solving",
       intent: "informational",
       expected_competitor_brands: [],
     },
     {
-      query_text: `${offering} gift for ${targetAudience}`,
-      category: "gift",
+      query_text: `${niche} recommendations for ${audience}`,
+      category: "discovery",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
+    },
+    ...(comp1 ? [{
+      query_text: `alternatives to ${comp1} for ${offering1}`,
+      category: "competitor-alternative",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 4),
+    }] : []),
+    {
+      query_text: `which company is best for ${offering2}${loc}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `${offering3} prices and costs${loc}`,
+      category: "budget-tier",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `how to choose a ${offering1} provider`,
+      category: "discovery",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `reliable ${niche} company${locAlt}`,
+      category: "trust-validation",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
+    },
+    {
+      query_text: `${offering1} reviews${loc}`,
+      category: "trust-validation",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `professional ${offering2} services${locAlt}`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: [],
+    },
+    ...(comp2 ? [{
+      query_text: `${comp2} vs other ${niche} providers`,
+      category: "comparison",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 4),
+    }] : []),
+    {
+      query_text: `what to look for in a ${offering1} service`,
+      category: "feature-specific",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `${niche} for businesses${loc}`,
+      category: "use-case",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 2),
+    },
+    {
+      query_text: `emergency ${offering1}${locAlt}`,
+      category: "local-intent",
       intent: "commercial",
       expected_competitor_brands: [],
     },
     {
-      query_text: `top rated ${niche} stores${loc}`,
-      category: "comparison",
+      query_text: `${offering3} specialists${loc}`,
+      category: "feature-specific",
       intent: "commercial",
-      expected_competitor_brands: estimatedCompetitors.slice(0, 2),
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `how much does ${offering1} cost${loc}`,
+      category: "budget-tier",
+      intent: "informational",
+      expected_competitor_brands: [],
+    },
+    {
+      query_text: `recommended ${niche} providers 2025`,
+      category: "discovery",
+      intent: "commercial",
+      expected_competitor_brands: profile.estimatedCompetitors.slice(0, 3),
+    },
+    {
+      query_text: `${priceAdj} ${offering2} that actually works`,
+      category: "feature-specific",
+      intent: "commercial",
+      expected_competitor_brands: [],
     },
   ];
 
-  // Deduplicate by query_text and filter store brand name from texts
+  // Deduplicate
   const seen = new Set<string>();
-  const filtered = templates.filter((t) => {
-    if (seen.has(t.query_text)) return false;
-    seen.add(t.query_text);
+  return templates.filter((t) => {
+    const key = t.query_text.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
-  });
-
-  return filtered.slice(0, count);
+  }).slice(0, count);
 }
 
 export async function generateQueries(
   store: ScrapedStore,
-  count: number = 25
+  count: number = 25,
+  precomputedProfile?: BusinessProfile
 ): Promise<GeneratedQuery[]> {
-  // Step 1: Understand the business — extract niche, audience, location, competitors
-  const profile = await analyzeBusinessProfile(store);
-
-  // Step 2: Build a dynamic niche-specific prompt using the business profile
+  const profile = precomputedProfile ?? await analyzeBusinessProfile(store);
   const prompt = buildQueryPrompt(store, profile, count);
 
-  // Step 3: Try AI generation — Anthropic first, then Gemini, then profile-aware fallback
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       const { text } = await generateText({
         model: anthropic("claude-3-5-haiku-20241022"),
         messages: [{ role: "user", content: prompt }],
-        maxOutputTokens: 4096,
+        maxOutputTokens: 6000,
         temperature: 0.7,
       });
       const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("No JSON array in response");
-      const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
-      if (parsed.length >= Math.floor(count * 0.8)) return parsed.slice(0, count);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
+        const validated = validateQueries(parsed, profile, store.brandName);
+        if (validated.length >= Math.floor(count * 0.7)) {
+          return validated.slice(0, count);
+        }
+      }
     } catch (err) {
       console.error("Anthropic query generation failed:", err);
     }
@@ -271,18 +339,25 @@ export async function generateQueries(
       const { text } = await generateText({
         model: googleAI("gemini-2.5-flash"),
         messages: [{ role: "user", content: prompt }],
-        maxOutputTokens: 4096,
+        maxOutputTokens: 6000,
         temperature: 0.7,
       });
       const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("No JSON array in response");
-      const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
-      if (parsed.length >= Math.floor(count * 0.8)) return parsed.slice(0, count);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as GeneratedQuery[];
+        const validated = validateQueries(parsed, profile, store.brandName);
+        if (validated.length >= Math.floor(count * 0.7)) {
+          return validated.slice(0, count);
+        }
+      }
     } catch (err) {
       console.error("Gemini query generation failed:", err);
     }
   }
 
-  console.warn("All AI query generation failed — using profile-aware fallback for:", store.brandName);
-  return generateFallbackQueries(store, profile, count);
+  console.warn("AI query generation failed — using niche-specific fallback for:", store.brandName, "niche:", profile.niche);
+  return generateNicheSpecificFallback(store, profile, count);
 }
+
+export { analyzeBusinessProfile };
+export type { BusinessProfile };

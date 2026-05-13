@@ -7,42 +7,34 @@ export interface MentionResult {
 }
 
 function buildVariants(name: string): string[] {
-  const variants = [name];
-  // possessive
-  variants.push(`${name}'s`);
-  // lowercase
-  variants.push(name.toLowerCase());
-  // without spaces (e.g. "AcmeCo")
-  variants.push(name.replace(/\s+/g, ""));
-  // first word only (for multi-word brands)
+  const variants = new Set<string>();
+  variants.add(name);
+  variants.add(name.toLowerCase());
+  variants.add(`${name}'s`);
+  variants.add(name.replace(/\s+/g, ""));
+  variants.add(name.replace(/\s+/g, "-"));
+
+  // First word only for multi-word brands (if first word is distinctive, length > 4)
   const words = name.split(/\s+/);
-  if (words.length > 1) variants.push(words[0]);
-  return [...new Set(variants)];
-}
-
-function findMentionPosition(text: string, variants: string[]): number | null {
-  const lowerText = text.toLowerCase();
-  const words = lowerText.split(/\s+/);
-  let earliestWordIndex: number | null = null;
-
-  for (const variant of variants) {
-    const lv = variant.toLowerCase();
-    const idx = lowerText.indexOf(lv);
-    if (idx !== -1) {
-      const wordIndex = words.slice(0, words.findIndex((_, i) => words.slice(0, i + 1).join(" ").length >= idx) + 1).length;
-      if (earliestWordIndex === null || wordIndex < earliestWordIndex) {
-        earliestWordIndex = wordIndex;
-      }
-    }
+  if (words.length > 1 && words[0].length > 4) {
+    variants.add(words[0]);
+    variants.add(words[0].toLowerCase());
   }
-  return earliestWordIndex;
+
+  // Common abbreviations (e.g. "Pest Busters" → "PB")
+  if (words.length > 1) {
+    const abbr = words.map((w) => w[0]).join("").toUpperCase();
+    if (abbr.length >= 2 && abbr.length <= 4) variants.add(abbr);
+  }
+
+  return [...variants];
 }
 
 function extractContextSnippet(text: string, variant: string): string | null {
   const idx = text.toLowerCase().indexOf(variant.toLowerCase());
   if (idx === -1) return null;
-  const start = Math.max(0, idx - 100);
-  const end = Math.min(text.length, idx + variant.length + 100);
+  const start = Math.max(0, idx - 120);
+  const end = Math.min(text.length, idx + variant.length + 120);
   return text.slice(start, end).trim();
 }
 
@@ -51,10 +43,22 @@ function detectSentiment(text: string, brandName: string): "positive" | "neutral
   const brandIdx = lowerText.indexOf(brandName.toLowerCase());
   if (brandIdx === -1) return "neutral";
 
-  const window = lowerText.slice(Math.max(0, brandIdx - 200), brandIdx + 200);
+  const windowStart = Math.max(0, brandIdx - 250);
+  const windowEnd = Math.min(text.length, brandIdx + brandName.length + 250);
+  const window = lowerText.slice(windowStart, windowEnd);
 
-  const positiveWords = ["recommend", "great", "excellent", "best", "top", "love", "fantastic", "outstanding", "perfect", "popular", "well-regarded", "highly rated", "trusted"];
-  const negativeWords = ["avoid", "poor", "worst", "bad", "terrible", "disappointing", "overpriced", "not recommend", "issues", "problems"];
+  const positiveWords = [
+    "recommend", "great", "excellent", "best", "top", "love", "fantastic",
+    "outstanding", "perfect", "popular", "well-regarded", "highly rated",
+    "trusted", "reliable", "reputable", "leading", "top-rated", "award",
+    "quality", "professional", "expert", "specialist", "certified",
+    "preferred", "go-to", "standout", "impressive", "solid", "strong",
+  ];
+  const negativeWords = [
+    "avoid", "poor", "worst", "bad", "terrible", "disappointing", "overpriced",
+    "not recommend", "issues", "problems", "unreliable", "scam", "fraud",
+    "complaint", "negative review", "stay away", "beware",
+  ];
 
   const positiveCount = positiveWords.filter((w) => window.includes(w)).length;
   const negativeCount = negativeWords.filter((w) => window.includes(w)).length;
@@ -64,58 +68,111 @@ function detectSentiment(text: string, brandName: string): "positive" | "neutral
   return "neutral";
 }
 
-// Simple brand name extractor from LLM response text
-// Finds capitalized multi-word sequences that look like brand names
+// Comprehensive stopwords — anything that shouldn't be treated as a brand name
+const BRAND_STOPWORDS = new Set([
+  // Pronouns and articles
+  "I", "You", "We", "They", "He", "She", "It", "Me", "Us", "Them",
+  "The", "A", "An", "This", "That", "These", "Those", "My", "Your",
+  "Our", "Their", "Its", "His", "Her",
+  // Common adjectives
+  "Best", "Great", "Good", "Top", "High", "Low", "New", "Old", "Big",
+  "Small", "Large", "Long", "Short", "Fast", "Slow", "Free", "Easy",
+  "Hard", "Strong", "Weak", "Full", "Empty", "Real", "True", "False",
+  "Right", "Wrong", "First", "Last", "Next", "More", "Most", "Some",
+  "Any", "All", "Other", "Same", "Similar", "Different", "Better", "Worse",
+  // Common verbs
+  "Is", "Are", "Was", "Were", "Be", "Been", "Being", "Have", "Has", "Had",
+  "Do", "Does", "Did", "Get", "Got", "Make", "Made", "Use", "Used",
+  "Find", "Know", "See", "Look", "Come", "Go", "Take", "Give", "Keep",
+  "Start", "Try", "Need", "Want", "Choose", "Consider", "Include",
+  // Common nouns that aren't brand names
+  "Service", "Services", "Product", "Products", "Brand", "Brands",
+  "Company", "Companies", "Business", "Businesses", "Team", "Teams",
+  "Customer", "Customers", "User", "Users", "Client", "Clients",
+  "Provider", "Providers", "Option", "Options", "Choice", "Choices",
+  "Solution", "Solutions", "Market", "Industry", "Category", "Field",
+  "Area", "Region", "Country", "City", "Place", "Location",
+  "Price", "Prices", "Cost", "Costs", "Value", "Quality", "Feature",
+  "Features", "Benefit", "Benefits", "Advantage", "Advantages",
+  "Review", "Reviews", "Rating", "Ratings", "Score", "Result", "Results",
+  "Information", "Experience", "Website", "Platform", "System", "Tool",
+  // Tech/AI words
+  "ChatGPT", "Gemini", "Claude", "AI", "LLM", "API", "SEO", "SaaS",
+  "Google", "Microsoft", "Meta", "Apple", "Amazon", "OpenAI", "Anthropic",
+  // Generic qualifiers
+  "Local", "National", "Global", "International", "Professional", "Expert",
+  "Certified", "Licensed", "Official", "Leading", "Trusted", "Reliable",
+  "Established", "Experienced", "Qualified", "Dedicated", "Specialized",
+  // Connectives
+  "And", "Or", "But", "For", "With", "On", "In", "At", "To", "Of",
+  "By", "From", "About", "Into", "Through", "During", "Before", "After",
+  "Above", "Below", "Between", "Among", "Around", "Within", "Without",
+  "Here", "There", "Where", "When", "Why", "How", "What", "Which", "Who",
+  // Months/days
+  "January", "February", "March", "April", "May", "June", "July", "August",
+  "September", "October", "November", "December", "Monday", "Tuesday",
+  "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+  // Numbers / currency
+  "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+  "USD", "AED", "GBP", "EUR", "SGD",
+]);
+
 function extractCompetitorBrands(
   text: string,
   ownBrandVariants: string[]
 ): Array<{ name: string; position: number }> {
-  const brandPattern = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/g;
+  // Look for patterns that indicate a brand is being named:
+  // 1. Capitalized proper nouns used as subjects of recommendations
+  // 2. Names following "recommend", "consider", "try", "check out", "look at"
   const found: Map<string, number> = new Map();
+  const lowerVariants = ownBrandVariants.map((v) => v.toLowerCase());
 
-  // Common words to exclude
-  const stopWords = new Set([
-    "I", "The", "A", "An", "And", "Or", "But", "For", "With", "On", "In",
-    "At", "To", "Of", "By", "From", "That", "This", "These", "Those",
-    "Here", "There", "They", "Their", "You", "Your", "We", "Our",
-    "Best", "Great", "Good", "Top", "High", "Low", "New", "Old",
-    "First", "Last", "Next", "More", "Most", "Some", "Any", "All",
-    "Amazon", "Google", "Apple", "ChatGPT", "AI", "LLM",
-  ]);
-
+  // Pattern 1: Multi-word proper nouns (Title Case sequences)
+  const multiWordPattern = /\b([A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,}){1,3})\b/g;
   let match;
-  let wordCount = 0;
-  const words = text.split(/\s+/);
-  let currentWord = 0;
-
-  while ((match = brandPattern.exec(text)) !== null) {
-    const candidate = match[1];
-    if (stopWords.has(candidate)) continue;
-    if (candidate.length < 3) continue;
-
-    // Skip if it's the own brand
-    const isOwnBrand = ownBrandVariants.some(
-      (v) => v.toLowerCase() === candidate.toLowerCase()
-    );
-    if (isOwnBrand) continue;
-
-    // Estimate position (word index in text)
-    const approxPosition = text.slice(0, match.index).split(/\s+/).length;
-
-    if (!found.has(candidate)) {
-      found.set(candidate, approxPosition);
+  while ((match = multiWordPattern.exec(text)) !== null) {
+    const candidate = match[1].trim();
+    if (isValidBrandName(candidate, lowerVariants)) {
+      const pos = text.slice(0, match.index).split(/\s+/).length;
+      if (!found.has(candidate)) found.set(candidate, pos);
     }
-    wordCount++;
-    if (wordCount > 100) break; // safety limit
-    currentWord = approxPosition;
   }
 
-  void currentWord; // suppress unused warning
+  // Pattern 2: Single capitalized words that look like brand names (camelCase or all-caps short)
+  const singlePattern = /\b([A-Z][a-z]{2,}[A-Z][a-zA-Z]*|[A-Z]{2,5}(?:\.com)?)\b/g;
+  while ((match = singlePattern.exec(text)) !== null) {
+    const candidate = match[1].trim();
+    if (isValidBrandName(candidate, lowerVariants) && candidate.length >= 3) {
+      const pos = text.slice(0, match.index).split(/\s+/).length;
+      if (!found.has(candidate)) found.set(candidate, pos);
+    }
+  }
+
+  // Pattern 3: Names following recommendation phrases
+  const recPattern = /(?:recommend|suggest|consider|try|check out|look at|use|prefer|choose|opt for|go with|known as|called|named|by)\s+([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,}){0,2})/g;
+  while ((match = recPattern.exec(text)) !== null) {
+    const candidate = match[1].trim();
+    if (isValidBrandName(candidate, lowerVariants)) {
+      const pos = text.slice(0, match.index).split(/\s+/).length;
+      if (!found.has(candidate)) found.set(candidate, pos);
+    }
+  }
 
   return Array.from(found.entries())
     .sort((a, b) => a[1] - b[1])
-    .slice(0, 10)
+    .slice(0, 8)
     .map(([name, position]) => ({ name, position }));
+}
+
+function isValidBrandName(candidate: string, ownVariantsLower: string[]): boolean {
+  if (candidate.length < 3 || candidate.length > 60) return false;
+  if (BRAND_STOPWORDS.has(candidate)) return false;
+  if (ownVariantsLower.includes(candidate.toLowerCase())) return false;
+  // Skip if it's all uppercase and long (likely an acronym phrase, not brand)
+  if (/^[A-Z]{5,}$/.test(candidate)) return false;
+  // Skip if it contains common non-brand patterns
+  if (/^(There|When|While|Since|Because|Although|However|Therefore|Moreover|Furthermore|Additionally)$/.test(candidate)) return false;
+  return true;
 }
 
 export function detectMention(
@@ -123,7 +180,7 @@ export function detectMention(
   brandName: string,
   brandAliases: string[] = []
 ): MentionResult {
-  if (!responseText) {
+  if (!responseText || responseText.trim().length < 10) {
     return { mentioned: false, position: null, contextSnippet: null, sentiment: null, competitors: [] };
   }
 
@@ -144,23 +201,22 @@ export function detectMention(
     }
   }
 
+  const allVariantsLower = allVariants.map((v) => v.toLowerCase());
+  const competitors = extractCompetitorBrands(responseText, allVariants);
+
   if (!mentioned) {
-    const competitors = extractCompetitorBrands(responseText, allVariants);
     return { mentioned: false, position: null, contextSnippet: null, sentiment: null, competitors };
   }
 
-  // Find approximate position (which brand mention number)
-  const allBrandsInText = extractCompetitorBrands(responseText, []);
-  const brandPositionIdx = allBrandsInText.findIndex(
-    (b) =>
-      allVariants.some((v) => v.toLowerCase() === b.name.toLowerCase())
+  // Find position: what brand number is this in the response?
+  const allBrandsInOrder = extractCompetitorBrands(responseText, []);
+  const ownBrandIndex = allBrandsInOrder.findIndex((b) =>
+    allVariantsLower.includes(b.name.toLowerCase())
   );
-  const position = brandPositionIdx >= 0 ? brandPositionIdx + 1 : 1;
+  const position = ownBrandIndex >= 0 ? ownBrandIndex + 1 : 1;
 
   const contextSnippet = extractContextSnippet(responseText, matchedVariant!);
   const sentiment = detectSentiment(responseText, brandName);
-
-  const competitors = extractCompetitorBrands(responseText, allVariants);
 
   return {
     mentioned,

@@ -2,7 +2,6 @@ import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { anthropic } from "@ai-sdk/anthropic";
-import { SHOPPING_PROMPT_TEMPLATE } from "@/lib/llm";
 
 export type FreeAuditProvider = "openai" | "gemini" | "anthropic";
 
@@ -22,8 +21,13 @@ const COST_PER_1K: Record<string, number> = {
   "claude-3-5-haiku-20241022": 0.0000008,
 };
 
-function buildShoppingPrompt(queryText: string): string {
-  return SHOPPING_PROMPT_TEMPLATE.replace("{query_text}", queryText);
+// Neutral AI assistant prompt that works for ALL business types
+// (products, services, SaaS, local businesses, professional services, etc.)
+// The query text itself provides all the context — the prompt just sets the assistant role.
+function buildAuditPrompt(queryText: string): string {
+  return `You are a knowledgeable AI assistant helping someone research options and make decisions. Answer the following question with specific, named recommendations where appropriate. Include real brand names, companies, service providers, or products that you know about. If recommending multiple options, list them clearly with brief explanations of why each is worth considering.
+
+Question: ${queryText}`;
 }
 
 async function callOpenAI(queryText: string): Promise<LLMResult> {
@@ -32,11 +36,11 @@ async function callOpenAI(queryText: string): Promise<LLMResult> {
   try {
     const { text, usage } = await generateText({
       model: openai(model),
-      messages: [{ role: "user", content: buildShoppingPrompt(queryText) }],
-      maxOutputTokens: 512,
-      temperature: 0.3,
+      messages: [{ role: "user", content: buildAuditPrompt(queryText) }],
+      maxOutputTokens: 600,
+      temperature: 0.4,
     });
-    const tokens = (usage?.totalTokens ?? 0);
+    const tokens = usage?.totalTokens ?? 0;
     return {
       provider: "openai",
       model,
@@ -46,7 +50,15 @@ async function callOpenAI(queryText: string): Promise<LLMResult> {
       durationMs: Date.now() - start,
     };
   } catch (err) {
-    return { provider: "openai", model, responseText: "", tokensUsed: 0, costUsd: 0, durationMs: Date.now() - start, error: String(err) };
+    return {
+      provider: "openai",
+      model,
+      responseText: "",
+      tokensUsed: 0,
+      costUsd: 0,
+      durationMs: Date.now() - start,
+      error: String(err),
+    };
   }
 }
 
@@ -54,18 +66,16 @@ async function callGemini(queryText: string): Promise<LLMResult> {
   const model = "gemini-2.5-flash";
   const start = Date.now();
   try {
-    // Use explicit API key because the env var is GOOGLE_GEMINI_API_KEY,
-    // not the default GOOGLE_GENERATIVE_AI_API_KEY that the SDK auto-reads.
     const googleAI = createGoogleGenerativeAI({
       apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? "",
     });
     const { text, usage } = await generateText({
       model: googleAI(model),
-      messages: [{ role: "user", content: buildShoppingPrompt(queryText) }],
-      maxOutputTokens: 512,
-      temperature: 0.3,
+      messages: [{ role: "user", content: buildAuditPrompt(queryText) }],
+      maxOutputTokens: 600,
+      temperature: 0.4,
     });
-    const tokens = (usage?.totalTokens ?? 0);
+    const tokens = usage?.totalTokens ?? 0;
     return {
       provider: "gemini",
       model,
@@ -75,7 +85,15 @@ async function callGemini(queryText: string): Promise<LLMResult> {
       durationMs: Date.now() - start,
     };
   } catch (err) {
-    return { provider: "gemini", model, responseText: "", tokensUsed: 0, costUsd: 0, durationMs: Date.now() - start, error: String(err) };
+    return {
+      provider: "gemini",
+      model,
+      responseText: "",
+      tokensUsed: 0,
+      costUsd: 0,
+      durationMs: Date.now() - start,
+      error: String(err),
+    };
   }
 }
 
@@ -85,11 +103,11 @@ async function callAnthropic(queryText: string): Promise<LLMResult> {
   try {
     const { text, usage } = await generateText({
       model: anthropic(model),
-      messages: [{ role: "user", content: buildShoppingPrompt(queryText) }],
-      maxOutputTokens: 512,
-      temperature: 0.3,
+      messages: [{ role: "user", content: buildAuditPrompt(queryText) }],
+      maxOutputTokens: 600,
+      temperature: 0.4,
     });
-    const tokens = (usage?.totalTokens ?? 0);
+    const tokens = usage?.totalTokens ?? 0;
     return {
       provider: "anthropic",
       model,
@@ -99,7 +117,15 @@ async function callAnthropic(queryText: string): Promise<LLMResult> {
       durationMs: Date.now() - start,
     };
   } catch (err) {
-    return { provider: "anthropic", model, responseText: "", tokensUsed: 0, costUsd: 0, durationMs: Date.now() - start, error: String(err) };
+    return {
+      provider: "anthropic",
+      model,
+      responseText: "",
+      tokensUsed: 0,
+      costUsd: 0,
+      durationMs: Date.now() - start,
+      error: String(err),
+    };
   }
 }
 
@@ -126,7 +152,12 @@ export async function runQueryAgainstProviders(
   if (calls.length === 0) {
     return providers.map((provider) => ({
       provider,
-      model: provider === "openai" ? "gpt-4o-mini" : provider === "gemini" ? "gemini-2.5-flash" : "claude-3-5-haiku-20241022",
+      model:
+        provider === "openai"
+          ? "gpt-4o-mini"
+          : provider === "gemini"
+          ? "gemini-2.5-flash"
+          : "claude-3-5-haiku-20241022",
       responseText: MOCK_RESPONSES[provider] ?? "",
       tokensUsed: 0,
       costUsd: 0,
@@ -137,8 +168,13 @@ export async function runQueryAgainstProviders(
   return Promise.all(calls);
 }
 
+// Mock responses contain no brand names — they are generic enough to simulate
+// real AI responses where the audited brand is not yet well-known to AI systems.
 const MOCK_RESPONSES: Record<string, string> = {
-  openai: "For this type of product, I'd recommend looking at several established brands. Brand A is known for quality and durability, while Brand B offers great value at a lower price point. Brand C has excellent customer reviews.",
-  gemini: "There are several great options to consider. Brand B and Brand C are top picks in this category based on user reviews. Brand D is also worth considering for eco-conscious shoppers.",
-  anthropic: "Based on my analysis, Brand C stands out as the top choice for quality and value. Brand A is also frequently recommended by experts. For budget-conscious shoppers, Brand B offers similar features at a lower cost.",
+  openai:
+    "There are several well-regarded options in this space. For established providers with strong track records, you might look at the leading companies in this sector. I'd recommend researching customer reviews and comparing pricing before deciding.",
+  gemini:
+    "Based on available information, the top options typically include established market leaders known for quality and reliability. Consider factors like customer support, pricing transparency, and service coverage when evaluating your choices.",
+  anthropic:
+    "This is a competitive market with several strong contenders. The best choice depends on your specific needs and location. I'd suggest getting quotes from multiple providers and checking their certifications and customer testimonials.",
 };
